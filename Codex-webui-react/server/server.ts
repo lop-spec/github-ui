@@ -28,7 +28,7 @@ import { deleteMcpServer, listMcpServers, saveMcpServer, toggleMcpServer, writeS
 import { getQuickPreview } from './services/preview.js';
 import { deleteSkill, listSkills, setSkillEnabled } from './services/skills.js';
 import { killTerminalSession, listTerminalSessions, resizeTerminalSession, spawnTerminalSession, writeTerminalStdin } from './services/terminal.js';
-import { scanSessions, parseSessionMessages, isWithinSessions, readHistory, writeHistory } from './utils/fs-helpers.js';
+import { scanSessions, parseSessionMessages, parseSessionMessagesPage, isWithinSessions, readHistory, writeHistory } from './utils/fs-helpers.js';
 import type { History, HistoryEntry, ProjectRoot, SessionEntry } from './types.js';
 import {
   cleanupExpiredTransfers,
@@ -55,7 +55,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const PORT = process.env.PORT ? Number(process.env.PORT) : 5155;
+const PORT = process.env.PORT ? Number(process.env.PORT) : 5055;
 const HOST = process.env.HOST || '0.0.0.0';
 const TOKEN = process.env.WEBUI_TOKEN || '';
 const PUBLIC_AUTH_USER = process.env.CODEX_WEBUI_PUBLIC_USER || 'lop';
@@ -991,7 +991,12 @@ function serveStatic(req: IncomingMessage, res: ServerResponse) {
     const types: Record<string, string> = {
       '.html': 'text/html; charset=utf-8',
       '.css': 'text/css; charset=utf-8',
-      '.js': 'application/javascript; charset=utf-8'
+      '.js': 'application/javascript; charset=utf-8',
+      '.webmanifest': 'application/manifest+json; charset=utf-8',
+      '.json': 'application/json; charset=utf-8',
+      '.svg': 'image/svg+xml; charset=utf-8',
+      '.png': 'image/png',
+      '.ico': 'image/x-icon'
     };
     setCORS(res);
     res.writeHead(200, {
@@ -2054,10 +2059,13 @@ const server = http.createServer((req, res) => {
       }
       sessionPath = abs;
     }
-    const messages = parseSessionMessages(sessionPath);
+    const page = parseSessionMessagesPage(sessionPath, {
+      limit: Number(parsedUrl.searchParams.get('limit') || 0),
+      before: parsedUrl.searchParams.has('before') ? Number(parsedUrl.searchParams.get('before')) : null
+    });
     setCORS(res);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ messages, current: sessionPath }));
+    return res.end(JSON.stringify({ ...page, current: sessionPath }));
   }
 
   if (req.method === 'POST' && url === '/resume') {

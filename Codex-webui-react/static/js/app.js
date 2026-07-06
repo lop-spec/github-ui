@@ -444,6 +444,8 @@ const CLIENT_BUILD = '20260706-manual-projects';
       let userInputSelectedOptions = {};
       let userInputFreeText = {};
       let transcriptSwitchSerial = 0;
+      let transcriptHistoryLoader = null;
+      let transcriptPageState = { path: '', total: 0, start: 0, end: 0, nextBefore: null, hasMoreOlder: false, loadingOlder: false };
       let sidebarRenderTimer = null;
       let sidebarRenderFull = false;
       const appNotificationTimers = new Map();
@@ -454,6 +456,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
       let serviceTierOverrideActive = false;
       let accountStatusCache = null;
       let composerRequestInFlight = false;
+      const TRANSCRIPT_PAGE_LIMIT = 120;
       const SEND_BUTTON_SVG = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
       const STOP_BUTTON_SVG = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M7 7h10v10H7z" fill="currentColor"/></svg>';
       const EDIT_BUTTON_SVG = '<svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 14.8l.7-3.2 7.2-7.2a2 2 0 0 1 2.8 2.8l-7.2 7.2L5 14.8Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M11.7 5.6l2.8 2.8" stroke="currentColor" stroke-width="1.5"/></svg>';
@@ -495,6 +498,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
         { id:'review', description:'对当前改动发起 Review。', flavor:'official', action:'startReview', meta:'Official', requiresThread:true, supportsInlineArgs:true },
         { id:'status', description:'查看当前会话配置与 token 使用情况。', flavor:'official', action:'showStatus', meta:'Local', availableDuringTask:true },
         { id:'debug-config', description:'查看配置层与来源。', flavor:'official', action:'showDebugConfig', meta:'Local', availableDuringTask:true },
+        { id:'diff', description:'显示当前工作区 diff。', flavor:'official', action:'showDiff', meta:'Local', requiresWorkspace:true, availableDuringTask:true },
         { id:'goal', description:'设置或查看长任务目标。', flavor:'official', action:'threadGoal', meta:'Official', requiresThread:true, supportsInlineArgs:true, availableDuringTask:true },
         { id:'compact', description:'压缩当前线程上下文。', flavor:'official', action:'compactThread', meta:'Official', requiresThread:true, availableDuringTask:false },
         { id:'fork', description:'从当前线程创建分支线程。', flavor:'official', action:'forkThread', meta:'Official', requiresThread:true, availableDuringTask:false },
@@ -1322,7 +1326,8 @@ const CLIENT_BUILD = '20260706-manual-projects';
         renderGitPanel();
       }
       async function openGitPanel() {
-        addSystem('Git 面板已在 React 迁移版中移除。', true);
+        openModal('gitModal');
+        await loadGitPanel(gitPanelState.scope);
       }
       async function runGitPathAction(endpoint, extra = {}) {
         const paths = gitSelectionPaths();
@@ -1413,7 +1418,14 @@ const CLIENT_BUILD = '20260706-manual-projects';
         renderTerminalPanel();
       }
       async function openTerminalPanel() {
-        addSystem('终端面板已在 React 迁移版中移除。', true);
+        openModal('terminalModal');
+        await loadTerminalSessions();
+        if (!terminalState.pollTimer) {
+          terminalState.pollTimer = setInterval(() => {
+            if (!$('terminalModal')?.classList.contains('open')) return;
+            loadTerminalSessions().catch(() => {});
+          }, 1500);
+        }
       }
       async function spawnTerminal() {
         const command = String(terminalCommandInput?.value || '').trim();
@@ -1502,6 +1514,18 @@ const CLIENT_BUILD = '20260706-manual-projects';
         if (data?.kind === 'website' && data.url) {
           window.open(data.url, '_blank', 'noopener');
         }
+      }
+      async function showGitDiff() {
+        await openGitPanel();
+        const data = await fetchJsonEndpoint('/git/diff');
+        if (!data.isRepo) {
+          addSystem(`Git：当前工作区不是 Git 仓库。\n${data.workdir || currentWorkdir}\n${data.error || ''}`.trim(), true);
+          return;
+        }
+        const files = (data.files || []).slice(0, 40).map((file) => [file.status, file.path]);
+        const table = files.length ? markdownTable(['状态', '文件'], files) : '当前没有未提交文件。';
+        const diff = data.diff ? `\n\n\`\`\`diff\n${data.diff}\n\`\`\`` : '';
+        addBubble(`Git 状态\n\n分支：${data.branch || '(detached)'}\n仓库：${data.root}\n\n${table}${diff}`, 'agent');
       }
       function setSkillsActionError(message = '') {
         if (!skillsActionError) return;
@@ -2076,6 +2100,10 @@ const CLIENT_BUILD = '20260706-manual-projects';
           addBubble('```json\n' + JSON.stringify(currentConfig, null, 2) + '\n```', 'agent');
           return;
         }
+        if (item.action === 'showDiff') {
+          await showGitDiff();
+          return;
+        }
         if (item.action === 'initAgents') {
           await initAgents();
           return;
@@ -2403,6 +2431,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
         latestUserQuestionText = '';
         activeTurnId = '';
         log.innerHTML = '';
+        resetTranscriptPageState();
         log.appendChild(emptyState);
         emptyState.style.display = '';
         resumePill.textContent = '新会话';
@@ -2517,7 +2546,8 @@ const CLIENT_BUILD = '20260706-manual-projects';
         if (kind === 'agent' && shouldShowAssistantFooter(options)) {
           applyAssistantMetadata(row, messageText, { ...options, question: options.question || questionForAssistant(options) });
         }
-        log.appendChild(row);
+        if (options.beforeNode) log.insertBefore(row, options.beforeNode);
+        else log.appendChild(row);
         if (options.scroll !== false) {
           scrollToBottom();
           updateTokenStats();
@@ -2747,7 +2777,8 @@ const CLIENT_BUILD = '20260706-manual-projects';
         const title = item.kind === 'commandExecution' ? timelineKindLabel(item.kind) : item.title || timelineKindLabel(item.kind);
         const head = `<span>${escapeHtml(title)}</span><span class="timeline-kind">${escapeHtml(timelineKindLabel(item.kind))}</span>${status}`;
         row.innerHTML = timelineDetailMarkup(item, detail, head);
-        log.appendChild(row);
+        if (options.beforeNode) log.insertBefore(row, options.beforeNode);
+        else log.appendChild(row);
         if (options.scroll !== false) {
           scrollToBottom();
           updateTokenStats();
@@ -2789,6 +2820,89 @@ const CLIENT_BUILD = '20260706-manual-projects';
       function scrollToBottom() {
         const timeline = $('timeline');
         timeline.scrollTop = timeline.scrollHeight;
+      }
+      function transcriptPageEndpoint(path, before = null) {
+        const params = new URLSearchParams({ limit: String(TRANSCRIPT_PAGE_LIMIT) });
+        if (path) params.set('path', path);
+        if (before !== null && before !== undefined) params.set('before', String(before));
+        return `/session-messages?${params.toString()}`;
+      }
+      function resetTranscriptPageState(path = '') {
+        transcriptPageState = { path, total: 0, start: 0, end: 0, nextBefore: null, hasMoreOlder: false, loadingOlder: false };
+        transcriptHistoryLoader?.remove();
+        transcriptHistoryLoader = null;
+      }
+      function updateTranscriptPageState(data = {}, path = transcriptPageState.path) {
+        transcriptPageState = {
+          ...transcriptPageState,
+          path: path || transcriptPageState.path || '',
+          total: Number(data.total || 0) || 0,
+          start: Number(data.start || 0) || 0,
+          end: Number(data.end || 0) || 0,
+          nextBefore: data.nextBefore ?? null,
+          hasMoreOlder: Boolean(data.hasMoreOlder),
+          loadingOlder: false
+        };
+      }
+      function renderTranscriptHistoryLoader() {
+        if (!transcriptPageState.hasMoreOlder && !transcriptPageState.loadingOlder) {
+          transcriptHistoryLoader?.remove();
+          transcriptHistoryLoader = null;
+          return;
+        }
+        if (!transcriptHistoryLoader) {
+          transcriptHistoryLoader = document.createElement('div');
+          transcriptHistoryLoader.className = 'transcript-history-loader';
+          transcriptHistoryLoader.innerHTML = '<button type="button" class="transcript-history-load-btn"></button>';
+          transcriptHistoryLoader.querySelector('button').addEventListener('click', () => {
+            loadOlderTranscriptPage().catch((error) => addSystem(`加载更早历史失败：${error.message || error}`, true));
+          });
+        }
+        const button = transcriptHistoryLoader.querySelector('button');
+        const remaining = Math.max(0, transcriptPageState.start);
+        button.disabled = transcriptPageState.loadingOlder;
+        button.textContent = transcriptPageState.loadingOlder ? '正在加载更早历史...' : `加载更早历史（剩余 ${remaining} 条）`;
+        if (transcriptHistoryLoader.parentElement !== log) log.insertBefore(transcriptHistoryLoader, log.firstChild);
+        else if (log.firstChild !== transcriptHistoryLoader) log.insertBefore(transcriptHistoryLoader, log.firstChild);
+      }
+      function renderTranscriptPageMessages(messages, path, beforeNode = null) {
+        (messages || []).forEach((message) => {
+          addTimelineItem(message, { scroll: false, sessionPath: path || currentResumePath, beforeNode });
+        });
+      }
+      async function loadOlderTranscriptPage() {
+        if (!transcriptPageState.hasMoreOlder || transcriptPageState.loadingOlder) return;
+        const path = transcriptPageState.path || currentResumePath;
+        if (!path) return;
+        const before = transcriptPageState.nextBefore ?? transcriptPageState.start;
+        if (before === null || before === undefined) return;
+        transcriptPageState = { ...transcriptPageState, loadingOlder: true };
+        renderTranscriptHistoryLoader();
+        const timeline = $('timeline');
+        const previousHeight = timeline.scrollHeight;
+        const previousTop = timeline.scrollTop;
+        try {
+          const response = await fetch(transcriptPageEndpoint(path, before), { cache: 'no-store' });
+          const data = await response.json();
+          if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+          if (!sameSessionPath(path, currentResumePath)) {
+            transcriptPageState = { ...transcriptPageState, loadingOlder: false };
+            renderTranscriptHistoryLoader();
+            return;
+          }
+          const anchor = transcriptHistoryLoader?.nextSibling || log.firstChild;
+          renderTranscriptPageMessages(data.messages || [], path, anchor);
+          updateTranscriptPageState(data, path);
+          renderTranscriptHistoryLoader();
+          timeline.scrollTop = previousTop + (timeline.scrollHeight - previousHeight);
+          updateTokenStats();
+          exposeDebugState();
+        } catch (error) {
+          transcriptPageState = { ...transcriptPageState, loadingOlder: false };
+          renderTranscriptHistoryLoader();
+          exposeDebugState();
+          throw error;
+        }
       }
       function updateTokenStats() {
         let allText = '';
@@ -4044,21 +4158,25 @@ const CLIENT_BUILD = '20260706-manual-projects';
       async function loadTranscript(path, options = {}) {
         const serial = options.serial || ++transcriptSwitchSerial;
         const smooth = options.smooth === true;
+        const transcriptPath = path || currentResumePath || '';
         if (smooth) beginTranscriptTransition();
         try {
-          const endpoint = path ? `/session-messages?path=${encodeURIComponent(path)}` : '/session-messages';
-          const response = await fetch(endpoint);
+          const response = await fetch(transcriptPageEndpoint(transcriptPath), { cache: 'no-store' });
           const data = await response.json();
           if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
           if (serial !== transcriptSwitchSerial) return;
           log.innerHTML = '';
+          transcriptHistoryLoader = null;
+          resetTranscriptPageState(data.current || transcriptPath);
           streamEl = null;
           if (emptyState) log.appendChild(emptyState);
           turnQuestionText.clear();
           latestUserQuestionText = '';
           activeTurnId = '';
           const messages = data.messages || [];
-          messages.forEach((m) => addTimelineItem(m, { scroll: false, sessionPath: path || currentResumePath }));
+          updateTranscriptPageState(data, data.current || transcriptPath);
+          renderTranscriptHistoryLoader();
+          renderTranscriptPageMessages(messages, data.current || transcriptPath);
           if (!messages.length) addSystem('这个会话没有解析到可展示消息。', true);
           ensureNotEmpty();
           scrollToBottom();
@@ -4067,6 +4185,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
         } catch (error) {
           if (serial !== transcriptSwitchSerial) return;
           log.innerHTML = '';
+          resetTranscriptPageState();
           if (emptyState) log.appendChild(emptyState);
           addSystem(`读取会话失败：${error.message || error}`, true);
           if (smooth) finishTranscriptTransition();
@@ -4102,6 +4221,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
         if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
         currentWorkdir = data.workdir || currentWorkdir;
         log.innerHTML = '';
+        resetTranscriptPageState();
         log.appendChild(emptyState);
         emptyState.style.display = '';
         currentResumePath = null;
@@ -4845,30 +4965,30 @@ const CLIENT_BUILD = '20260706-manual-projects';
           });
         }
       });
-      terminalSpawnBtn?.addEventListener('click', () => spawnTerminal().catch((error) => setTerminalStatus(`终端创建失败：${error.message || error}`, true)));
-      terminalRefreshBtn?.addEventListener('click', () => loadTerminalSessions().catch((error) => setTerminalStatus(`终端刷新失败：${error.message || error}`, true)));
-      terminalKillBtn?.addEventListener('click', () => killActiveTerminal().catch((error) => setTerminalStatus(`终端结束失败：${error.message || error}`, true)));
-      terminalSendInputBtn?.addEventListener('click', () => sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true)));
-      terminalStdinInput?.addEventListener('keydown', (event) => {
+      terminalSpawnBtn.addEventListener('click', () => spawnTerminal().catch((error) => setTerminalStatus(`终端创建失败：${error.message || error}`, true)));
+      terminalRefreshBtn.addEventListener('click', () => loadTerminalSessions().catch((error) => setTerminalStatus(`终端刷新失败：${error.message || error}`, true)));
+      terminalKillBtn.addEventListener('click', () => killActiveTerminal().catch((error) => setTerminalStatus(`终端结束失败：${error.message || error}`, true)));
+      terminalSendInputBtn.addEventListener('click', () => sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true)));
+      terminalStdinInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
           sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true));
         }
       });
-      gitRefreshBtn?.addEventListener('click', () => loadGitPanel(gitPanelState.scope).catch((error) => setGitStatusLine(`Git 刷新失败：${error.message || error}`, true)));
-      gitOpenRepoBtn?.addEventListener('click', () => {
+      gitRefreshBtn.addEventListener('click', () => loadGitPanel(gitPanelState.scope).catch((error) => setGitStatusLine(`Git 刷新失败：${error.message || error}`, true)));
+      gitOpenRepoBtn.addEventListener('click', () => {
         const repo = gitPanelState.status?.repoRoot || gitPanelState.status?.root || currentWorkdir;
         if (repo) openLocalPath(repo);
       });
-      gitScopeUnstaged?.addEventListener('click', () => loadGitPanel('unstaged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
-      gitScopeStaged?.addEventListener('click', () => loadGitPanel('staged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
-      gitStageSelected?.addEventListener('click', () => runGitPathAction('/git/stage').catch((error) => setGitStatusLine(`暂存失败：${error.message || error}`, true)));
-      gitUnstageSelected?.addEventListener('click', () => runGitPathAction('/git/unstage').catch((error) => setGitStatusLine(`取消暂存失败：${error.message || error}`, true)));
-      gitDiscardSelected?.addEventListener('click', () => discardSelectedGitChanges().catch((error) => setGitStatusLine(`丢弃失败：${error.message || error}`, true)));
-      gitCommitBtn?.addEventListener('click', () => commitGitChanges().catch((error) => setGitStatusLine(`提交失败：${error.message || error}`, true)));
-      gitPullBtn?.addEventListener('click', () => pullGitChanges().catch((error) => setGitStatusLine(`拉取失败：${error.message || error}`, true)));
-      gitPushBtn?.addEventListener('click', () => pushGitChanges().catch((error) => setGitStatusLine(`推送失败：${error.message || error}`, true)));
-      gitBranchCreate?.addEventListener('click', () => createGitBranch().catch((error) => setGitStatusLine(`创建分支失败：${error.message || error}`, true)));
+      gitScopeUnstaged.addEventListener('click', () => loadGitPanel('unstaged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
+      gitScopeStaged.addEventListener('click', () => loadGitPanel('staged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
+      gitStageSelected.addEventListener('click', () => runGitPathAction('/git/stage').catch((error) => setGitStatusLine(`暂存失败：${error.message || error}`, true)));
+      gitUnstageSelected.addEventListener('click', () => runGitPathAction('/git/unstage').catch((error) => setGitStatusLine(`取消暂存失败：${error.message || error}`, true)));
+      gitDiscardSelected.addEventListener('click', () => discardSelectedGitChanges().catch((error) => setGitStatusLine(`丢弃失败：${error.message || error}`, true)));
+      gitCommitBtn.addEventListener('click', () => commitGitChanges().catch((error) => setGitStatusLine(`提交失败：${error.message || error}`, true)));
+      gitPullBtn.addEventListener('click', () => pullGitChanges().catch((error) => setGitStatusLine(`拉取失败：${error.message || error}`, true)));
+      gitPushBtn.addEventListener('click', () => pushGitChanges().catch((error) => setGitStatusLine(`推送失败：${error.message || error}`, true)));
+      gitBranchCreate.addEventListener('click', () => createGitBranch().catch((error) => setGitStatusLine(`创建分支失败：${error.message || error}`, true)));
       projectOpenConfirm.addEventListener('click', () => openProjectFolder(projectPathInput.value));
       projectPickFolder.addEventListener('click', pickProjectFolder);
       projectBrowseUp.addEventListener('click', () => {
@@ -4942,6 +5062,10 @@ const CLIENT_BUILD = '20260706-manual-projects';
       });
       $('dictationBtn').addEventListener('click', toggleDictation);
       sideFilter.addEventListener('input', () => { renderSessions(); renderProjects(); });
+      $('timeline').addEventListener('scroll', () => {
+        const timeline = $('timeline');
+        if (timeline.scrollTop <= 80) loadOlderTranscriptPage().catch((error) => addSystem(`加载更早历史失败：${error.message || error}`, true));
+      });
       log.addEventListener('click', (event) => {
         const trigger = event.target && event.target.closest ? event.target.closest('.local-path-link') : null;
         if (!trigger) return;
