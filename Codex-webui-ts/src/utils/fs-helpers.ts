@@ -11,7 +11,25 @@ const HISTORY_FILE = process.env.CODEX_WEBUI_HISTORY_FILE
   ? path.resolve(process.env.CODEX_WEBUI_HISTORY_FILE)
   : path.resolve(__dirname, '../../history.json');
 const SESS_ROOT = path.join(os.homedir(), '.codex', 'sessions');
+const DEFAULT_SESSION_MESSAGE_LIMIT = 120;
 const sessionSummaryCache = new Map<string, { mtimeMs: number; size: number; summary: Pick<SessionEntry, 'title' | 'cwd' | 'messageCount'> }>();
+const sessionMessagesCache = new Map<string, { mtimeMs: number; size: number; messages: Message[] }>();
+
+export interface SessionMessagesPage {
+  messages: Message[];
+  total: number;
+  start: number;
+  end: number;
+  limit: number;
+  hasMoreOlder: boolean;
+  hasMoreNewer: boolean;
+  nextBefore: number | null;
+}
+
+export interface SessionMessagePageOptions {
+  limit?: number;
+  before?: number | null;
+}
 
 function comparablePath(p: string): string {
   const normalized = process.platform === 'win32' ? p.replace(/^\\\\\?\\/, '') : p;
