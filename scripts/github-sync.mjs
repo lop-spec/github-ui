@@ -2,6 +2,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -14,6 +15,8 @@ export const DEFAULT_CONFIG = {
   createRepo: true,
   private: false,
   repoDescription: 'Realtime synced source and rule files from local github-ui workspace.',
+  sourceMarkerPath: 'sync-meta/source.json',
+  sourceStatePath: 'logs/github-sync-state.json',
   messagePrefix: 'sync(github-ui)',
   debounceMs: 1500,
   maxFileBytes: 2 * 1024 * 1024,
@@ -22,6 +25,7 @@ export const DEFAULT_CONFIG = {
     'AGENTS.md',
     'package.json',
     'RULES.md',
+    'sync-meta/source.json',
     'parity/**',
     'scripts/**',
     'Codex-webui-ts/AGENTS.md',
@@ -164,6 +168,10 @@ export function loadConfig(rootDir = root, env = process.env) {
   config.token = env.GITHUB_SYNC_TOKEN || env.GITHUB_TOKEN || '';
   config.authorName = env.GITHUB_SYNC_AUTHOR_NAME || config.authorName || 'github-ui sync';
   config.authorEmail = env.GITHUB_SYNC_AUTHOR_EMAIL || config.authorEmail || 'github-ui-sync@users.noreply.github.com';
+  config.sourceId = env.GITHUB_SYNC_SOURCE_ID || config.sourceId || '';
+  config.sourceName = env.GITHUB_SYNC_SOURCE_NAME || config.sourceName || '';
+  config.sourceMarkerPath = toPosixPath(env.GITHUB_SYNC_SOURCE_MARKER_PATH || config.sourceMarkerPath || DEFAULT_CONFIG.sourceMarkerPath);
+  config.sourceStatePath = toPosixPath(env.GITHUB_SYNC_STATE_PATH || config.sourceStatePath || DEFAULT_CONFIG.sourceStatePath);
   if (env.GITHUB_SYNC_CREATE_REPO !== undefined) config.createRepo = parseBool(env.GITHUB_SYNC_CREATE_REPO, config.createRepo);
   if (env.GITHUB_SYNC_PRIVATE !== undefined) config.private = parseBool(env.GITHUB_SYNC_PRIVATE, config.private);
 
@@ -174,6 +182,45 @@ export function loadConfig(rootDir = root, env = process.env) {
   config.maxFileBytes = Number(config.maxFileBytes || DEFAULT_CONFIG.maxFileBytes);
   config.maxChangesPerCommit = Number(config.maxChangesPerCommit || DEFAULT_CONFIG.maxChangesPerCommit);
   return config;
+}
+
+export function localSourceInfo(rootDir = root, config = loadConfig(rootDir)) {
+  const seed = [
+    os.hostname(),
+    os.userInfo().username,
+    path.resolve(rootDir)
+  ].join('|');
+  const sourceId = config.sourceId || createHash('sha256').update(seed).digest('hex').slice(0, 24);
+  return {
+    version: 1,
+    sourceId,
+    sourceName: config.sourceName || `machine-${sourceId.slice(0, 8)}`,
+    sourceKind: 'machine-workspace-hash',
+    workspace: path.basename(rootDir),
+    scope: 'source-rules'
+  };
+}
+
+function sourceMarkerBuffer(rootDir, config) {
+  const marker = {
+    ...localSourceInfo(rootDir, config),
+    updatedAt: new Date().toISOString()
+  };
+  return Buffer.from(`${JSON.stringify(marker, null, 2)}\n`, 'utf8');
+}
+
+function syncStatePath(rootDir, config) {
+  return path.join(rootDir, config.sourceStatePath || DEFAULT_CONFIG.sourceStatePath);
+}
+
+function writeSyncState(rootDir, config, data) {
+  const filePath = syncStatePath(rootDir, config);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify({
+    ...data,
+    source: localSourceInfo(rootDir, config),
+    updatedAt: new Date().toISOString()
+  }, null, 2)}\n`, 'utf8');
 }
 
 function parseBool(value, fallback) {
@@ -264,6 +311,17 @@ export function collectSyncFiles(rootDir = root, config = loadConfig(rootDir)) {
   }
 
   walk(rootDir);
+  if (config.sourceMarkerPath && shouldSync(config.sourceMarkerPath)) {
+    const content = sourceMarkerBuffer(rootDir, config);
+    files.push({
+      path: config.sourceMarkerPath,
+      absPath: null,
+      size: content.length,
+      sha: gitBlobSha(content),
+      content,
+      virtual: true
+    });
+  }
   files.sort((a, b) => a.path.localeCompare(b.path));
   skipped.sort((a, b) => a.path.localeCompare(b.path));
   return { files, skipped };
@@ -491,10 +549,33 @@ export async function syncOnce({ rootDir = root, config = loadConfig(rootDir), d
   assertChangeLimit(config, changeCount);
 
   if (changeCount === 0) {
+    writeSyncState(rootDir, config, {
+      headSha: remote.headSha,
+      commitSha: remote.headSha,
+      upToDate: true
+    });
     return {
       ok: true,
       dryRun: false,
       upToDate: true,
+      headSha: remote.headSha,
+      changedCount: 0,
+      removedCount: 0,
+      ...summary
+    };
+  }
+
+  if (changedFiles.length === 1 && changedFiles[0].path === config.sourceMarkerPath && removedPaths.length === 0) {
+    writeSyncState(rootDir, config, {
+      headSha: remote.headSha,
+      commitSha: remote.headSha,
+      markerOnlySkipped: true
+    });
+    return {
+      ok: true,
+      dryRun: false,
+      upToDate: true,
+      markerOnlySkipped: true,
       headSha: remote.headSha,
       changedCount: 0,
       removedCount: 0,
@@ -548,6 +629,13 @@ export async function syncOnce({ rootDir = root, config = loadConfig(rootDir), d
       force: false
     });
   }
+
+  writeSyncState(rootDir, config, {
+    headSha: commit.sha,
+    commitSha: commit.sha,
+    changedCount: changedFiles.length,
+    removedCount: removedPaths.length
+  });
 
   return {
     ok: true,
@@ -632,6 +720,8 @@ function statusReport(rootDir, config) {
     repo: config.repo || null,
     branch: config.branch || null,
     tokenConfigured: Boolean(config.token),
+    source: localSourceInfo(rootDir, config),
+    sourceMarkerPath: config.sourceMarkerPath,
     createRepo: Boolean(config.createRepo),
     private: Boolean(config.private),
     includeCount: config.include.length,
@@ -645,6 +735,7 @@ function printStatus(report) {
   console.log(`[github-sync] root: ${report.root}`);
   console.log(`[github-sync] target: ${report.owner || '<token user>'}/${report.repo || '<missing repo>'}#${report.branch || '<missing branch>'}`);
   console.log(`[github-sync] token: ${report.tokenConfigured ? 'configured' : 'missing'}`);
+  console.log(`[github-sync] source: ${report.source.sourceName} (${report.source.sourceId}) -> ${report.sourceMarkerPath}`);
   console.log(`[github-sync] create missing repo: ${report.createRepo ? 'yes' : 'no'} (${report.private ? 'private' : 'public'})`);
   console.log(`[github-sync] local source files: ${report.fileCount} (${formatBytes(report.totalBytes)})`);
   console.log(`[github-sync] skipped: ${report.skippedCount}`);
