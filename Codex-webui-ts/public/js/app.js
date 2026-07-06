@@ -1184,10 +1184,10 @@ const CLIENT_BUILD = '20260706-project-window';
           accountUsageSummary.innerHTML = '';
           return;
         }
-        accountUsageSummary.innerHTML = items.map(([label, value]) => `
+        accountUsageSummary.innerHTML = items.map(([label, value, formatter]) => `
           <div class="account-usage-item">
             <span>${escapeHtml(label)}</span>
-            <strong>${escapeHtml(arguments.length ? value : value)}</strong>
+            <strong>${escapeHtml(formatter(value))}</strong>
           </div>
         `).join('');
       }
