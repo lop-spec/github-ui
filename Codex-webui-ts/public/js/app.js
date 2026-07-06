@@ -2545,7 +2545,8 @@ const CLIENT_BUILD = '20260706-manual-projects';
         if (kind === 'agent' && shouldShowAssistantFooter(options)) {
           applyAssistantMetadata(row, messageText, { ...options, question: options.question || questionForAssistant(options) });
         }
-        log.appendChild(row);
+        if (options.beforeNode) log.insertBefore(row, options.beforeNode);
+        else log.appendChild(row);
         if (options.scroll !== false) {
           scrollToBottom();
           updateTokenStats();
@@ -2696,7 +2697,8 @@ const CLIENT_BUILD = '20260706-manual-projects';
         row.className = `bubble ${error ? 'error' : 'system'}`;
         row.dataset.status = 'done';
         row.innerHTML = `<div class="bubble-card">${messageHeader(error ? 'error' : 'system')}<div class="message-text mono">${escapeHtml(textValue)}</div></div>`;
-        log.appendChild(row);
+        if (options.beforeNode) log.insertBefore(row, options.beforeNode);
+        else log.appendChild(row);
         scrollToBottom();
       }
       window.addEventListener('error', (event) => {
