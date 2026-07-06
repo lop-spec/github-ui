@@ -143,6 +143,7 @@ export const DEFAULT_CONFIG = {
     '.env.*',
     '**/.env',
     '**/.env.*',
+    'github-sync.config.json',
     'github-sync.config.local.json',
     'Codex-webui-ts/src/public-tunnel.ts',
     'Codex-webui-react/server/public-tunnel.ts',
@@ -157,6 +158,7 @@ export const DEFAULT_CONFIG = {
     '**/*.crt'
   ],
   pruneRemote: [
+    'github-sync.config.json',
     'Codex-webui-ts/src/public-tunnel.ts',
     'Codex-webui-react/server/public-tunnel.ts',
     'Codex-webui-ts/src/p2p-helper.ts',
