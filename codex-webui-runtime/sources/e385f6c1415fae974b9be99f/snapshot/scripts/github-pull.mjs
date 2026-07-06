@@ -375,8 +375,12 @@ function sourceUpdatedAtValue(source) {
 }
 
 function selectLatestRemoteSource(sourceInfos, localSource) {
+  const localRemoteSource = [...sourceInfos.values()]
+    .find((source) => isSameLocalSource(source, localSource));
+  const localUpdatedAt = sourceUpdatedAtValue(localRemoteSource);
   const sources = [...sourceInfos.values()]
     .filter((source) => source?.sourceId && !isSameLocalSource(source, localSource))
+    .filter((source) => !localUpdatedAt || sourceUpdatedAtValue(source) > localUpdatedAt)
     .sort((a, b) => {
       const byTime = sourceUpdatedAtValue(b) - sourceUpdatedAtValue(a);
       if (byTime) return byTime;
