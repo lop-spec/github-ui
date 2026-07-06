@@ -345,6 +345,7 @@ const CLIENT_BUILD = '20260706-project-window';
           currentWorkdir,
           codexRunning,
           queuedFollowUps: queuedFollowUps.length,
+          guidanceState,
           composerSurface: Boolean(document.querySelector('[data-plus-composer]')),
           composerContext: composerContextLabel ? composerContextLabel.textContent : '',
           composerRunState: composerRunState ? composerRunState.textContent : '',
@@ -430,6 +431,7 @@ const CLIENT_BUILD = '20260706-project-window';
       let eventStreamStarted = false;
       let composerAttachments = [];
       let queuedFollowUps = [];
+      let guidanceState = { pending: 0, saved: 0, count: 0, items: [] };
       let queuePanelCollapsed = false;
       let codexRunning = false;
       let windowFocused = !document.hidden && document.hasFocus();
@@ -978,7 +980,8 @@ const CLIENT_BUILD = '20260706-project-window';
           `工作区：${currentWorkdir || '未选择'}`,
           `线程：${currentResumePath || '新会话'}`,
           `运行中：${codexRunning ? '是' : '否'}`,
-          `排队：${queuedFollowUps.length} 条`
+          `排队：${queuedFollowUps.length} 条`,
+          `引导：${guidanceState.count || 0} 条`
         ].join('\n');
       }
       async function showStatusDetail() {
