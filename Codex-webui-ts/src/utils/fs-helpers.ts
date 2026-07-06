@@ -281,7 +281,7 @@ export function writeHistory(h: History): void {
   try { fs.writeFileSync(HISTORY_FILE, JSON.stringify(h, null, 2)); } catch {}
 }
 
-export function parseSessionMessages(filePath: string | null): Message[] {
+function readSessionMessagesUncached(filePath: string): Message[] {
   const out: Message[] = [];
   const fallback: Message[] = [];
   let currentTurnId = '';
@@ -289,7 +289,6 @@ export function parseSessionMessages(filePath: string | null): Message[] {
   const outAssistantTiming: AssistantTimingCandidate[] = [];
   const fallbackAssistantTiming: AssistantTimingCandidate[] = [];
   try {
-    if (!filePath || !fs.existsSync(filePath)) return out;
     const raw = fs.readFileSync(filePath, 'utf8');
     const lines = raw.split(/\r?\n/);
     for (const line of lines) {
@@ -369,8 +368,60 @@ export function parseSessionMessages(filePath: string | null): Message[] {
   } catch {}
   attachFinalAssistantTiming(out, outAssistantTiming);
   attachFinalAssistantTiming(fallback, fallbackAssistantTiming);
-  // limit to last 100
-  return (out.length ? out : fallback).slice(-100);
+  return out.length ? out : fallback;
+}
+
+function cacheSessionMessages(filePath: string, stat: fs.Stats, messages: Message[]): Message[] {
+  if (sessionMessagesCache.size > 128) {
+    const oldest = sessionMessagesCache.keys().next().value;
+    if (oldest) sessionMessagesCache.delete(oldest);
+  }
+  sessionMessagesCache.set(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, messages });
+  return messages;
+}
+
+function sessionMessagesFor(filePath: string | null): Message[] {
+  try {
+    if (!filePath) return [];
+    const abs = path.resolve(filePath);
+    const stat = fs.statSync(abs);
+    const cached = sessionMessagesCache.get(abs);
+    if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.messages;
+    return cacheSessionMessages(abs, stat, readSessionMessagesUncached(abs));
+  } catch {
+    return [];
+  }
+}
+
+function clampSessionMessageLimit(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_SESSION_MESSAGE_LIMIT;
+  return Math.max(20, Math.min(500, Math.floor(parsed)));
+}
+
+export function parseSessionMessages(filePath: string | null): Message[] {
+  return sessionMessagesFor(filePath).slice();
+}
+
+export function parseSessionMessagesPage(filePath: string | null, options: SessionMessagePageOptions = {}): SessionMessagesPage {
+  const all = sessionMessagesFor(filePath);
+  const total = all.length;
+  const limit = clampSessionMessageLimit(options.limit);
+  const rawBefore = Number(options.before);
+  const end = Number.isFinite(rawBefore) && rawBefore >= 0
+    ? Math.max(0, Math.min(total, Math.floor(rawBefore)))
+    : total;
+  const start = Math.max(0, end - limit);
+  return {
+    messages: all.slice(start, end),
+    total,
+    start,
+    end,
+    limit,
+    hasMoreOlder: start > 0,
+    hasMoreNewer: end < total,
+    nextBefore: start > 0 ? start : null
+  };
 }
 
 export function countSessionTurnsFrom(filePath: string | null, targetTurnId: string): number {
