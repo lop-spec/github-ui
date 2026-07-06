@@ -1609,6 +1609,11 @@
         box-shadow: var(--shadow);
         overflow: hidden;
       }
+      .composer-drop-active {
+        border-color: color-mix(in srgb, var(--accent) 54%, var(--border));
+        background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent), var(--shadow);
+      }
       .composer-status-row {
         min-height: 34px;
         display: flex;
