@@ -230,9 +230,10 @@ const CLIENT_BUILD = '20260706-transfer-merge';
         playNotificationTone(payload.kind || 'success');
         sendBrowserNotification(title, body);
       }
-      function recordTurnStarted() {
+      function recordTurnStarted(sessionPath = activeRuntimeResumePath || currentResumePath) {
         lastTurnStartedAt = Date.now();
         latestAgentMessageText = '';
+        activeStreamSessionPath = sessionPath || currentResumePath || activeStreamSessionPath || '';
       }
       function maybeNotifyAgentCompletion(textValue) {
         const completedAtMs = Date.now();
@@ -398,6 +399,8 @@ const CLIENT_BUILD = '20260706-transfer-merge';
         return Boolean(session?.pinned) || pinnedPaths.has(session?.path);
       }
       let streamEl = null;
+      let activeStreamSessionPath = null;
+      let activeRuntimeResumePath = null;
       let currentResumePath = null;
       let currentWorkdir = '';
       let currentProjectRootPath = '';
@@ -2183,6 +2186,12 @@ const CLIENT_BUILD = '20260706-transfer-merge';
       function sameSessionPath(a, b) {
         return Boolean(a && b && normalizeSessionPath(a) === normalizeSessionPath(b));
       }
+      function sessionPathForStreamingEvent(data = {}) {
+        return data.resume_path || data.sessionPath || data.path || activeStreamSessionPath || activeRuntimeResumePath || currentResumePath || '';
+      }
+      function shouldRenderStreamingEvent(sessionPath) {
+        return !sessionPath || !currentResumePath || sameSessionPath(sessionPath, currentResumePath);
+      }
       function projectName(workdir) {
         return String(workdir || '').split(/[\\/]/).filter(Boolean).pop() || '新对话';
       }
@@ -2387,6 +2396,8 @@ const CLIENT_BUILD = '20260706-transfer-merge';
       }
       function resetToEmptyProjectSession(workdir, detail = '已切换项目主目录') {
         currentResumePath = null;
+        activeRuntimeResumePath = null;
+        activeStreamSessionPath = null;
         currentWorkdir = workdir || currentWorkdir;
         currentProjectRootPath = workdir || currentProjectRootPath || currentWorkdir;
         codexRunning = false;
@@ -2604,6 +2615,7 @@ const CLIENT_BUILD = '20260706-transfer-merge';
           if (current !== emptyState) current.remove();
         }
         streamEl = null;
+        activeStreamSessionPath = null;
       }
       async function submitUserMessageEdit(state = messageEditState) {
         if (!state || composerRequestInFlight) return;
@@ -2633,8 +2645,9 @@ const CLIENT_BUILD = '20260706-transfer-merge';
           if (data.ok === false) throw new Error(data.error || '编辑发送失败');
           pendingEditedUserEcho = { text: editedText, expiresAt: Date.now() + 5000 };
           currentResumePath = data.resume_path || currentResumePath;
+          activeRuntimeResumePath = data.resume_path || activeRuntimeResumePath || currentResumePath;
           codexRunning = typeof data.running === 'boolean' ? data.running : true;
-          if (data.status === 'started' || data.status === 'steered') recordTurnStarted();
+          if (data.status === 'started' || data.status === 'steered') recordTurnStarted(activeRuntimeResumePath);
           if (Array.isArray(data.queue)) queuedFollowUps = data.queue;
           const messageText = state.row.querySelector('.message-text');
           if (messageText) messageText.innerHTML = renderMarkdownBlocks(editedText);
@@ -3178,7 +3191,7 @@ const CLIENT_BUILD = '20260706-transfer-merge';
         return btn;
       }
       function isRunningSession(session) {
-        return Boolean(codexRunning && session && sameSessionPath(session.path, currentResumePath));
+        return Boolean(codexRunning && session && sameSessionPath(session.path, activeRuntimeResumePath || currentResumePath));
       }
       function closeContextMenu() {
         document.querySelectorAll('.context-menu').forEach((menu) => menu.remove());
@@ -3501,6 +3514,9 @@ const CLIENT_BUILD = '20260706-transfer-merge';
         dropConversationNavPath(session.path);
         if (sameSessionPath(currentResumePath, session.path)) {
           currentResumePath = null;
+          if (sameSessionPath(activeRuntimeResumePath, session.path)) activeRuntimeResumePath = null;
+          if (sameSessionPath(activeStreamSessionPath, session.path)) activeStreamSessionPath = null;
+          streamEl = null;
           resumePill.textContent = '未恢复';
           threadTitle.textContent = '新对话';
           threadMeta.textContent = reason;
@@ -3529,6 +3545,7 @@ const CLIENT_BUILD = '20260706-transfer-merge';
           const data = await response.json().catch(() => ({}));
           if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
           currentResumePath = data.resume_path || path;
+          activeRuntimeResumePath = currentResumePath;
           currentWorkdir = data.workdir || currentWorkdir;
           if (session) setActiveSession({ ...session, path: currentResumePath }, false);
           scheduleSidebarRender(80, { full: false });
@@ -3882,6 +3899,7 @@ const CLIENT_BUILD = '20260706-transfer-merge';
           if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
           if (serial !== transcriptSwitchSerial) return;
           log.innerHTML = '';
+          streamEl = null;
           if (emptyState) log.appendChild(emptyState);
           turnQuestionText.clear();
           latestUserQuestionText = '';
@@ -3934,6 +3952,9 @@ const CLIENT_BUILD = '20260706-transfer-merge';
         log.appendChild(emptyState);
         emptyState.style.display = '';
         currentResumePath = null;
+        activeRuntimeResumePath = null;
+        activeStreamSessionPath = null;
+        streamEl = null;
         codexRunning = false;
         queuedFollowUps = [];
         turnQuestionText.clear();
@@ -4215,9 +4236,10 @@ const CLIENT_BUILD = '20260706-transfer-merge';
           const data = await response.json().catch(() => ({}));
           if (data.ok === false) throw new Error(data.error || '发送失败');
           if (data.resume_path) currentResumePath = data.resume_path;
+          activeRuntimeResumePath = data.resume_path || activeRuntimeResumePath || currentResumePath;
           if (typeof data.running === 'boolean') codexRunning = data.running;
           else if (data.status === 'started' || data.status === 'steered' || data.status === 'queued') codexRunning = true;
-          if (data.status === 'started' || data.status === 'steered') recordTurnStarted();
+          if (data.status === 'started' || data.status === 'steered') recordTurnStarted(activeRuntimeResumePath);
           if (Array.isArray(data.queue)) {
             queuedFollowUps = data.queue;
           }
@@ -4371,10 +4393,13 @@ const CLIENT_BUILD = '20260706-transfer-merge';
           try {
             const data = JSON.parse(event.data);
             const previousResumePath = currentResumePath;
+            const previousRuntimeResumePath = activeRuntimeResumePath;
             const previousRunning = codexRunning;
-            currentResumePath = data.resume_path || null;
+            const nextRuntimeResumePath = data.resume_path || null;
+            const wasFollowingRuntimeSession = !currentResumePath || !previousRuntimeResumePath || sameSessionPath(currentResumePath, previousRuntimeResumePath);
+            activeRuntimeResumePath = nextRuntimeResumePath;
             currentWorkdir = data.workdir || currentWorkdir;
-            if (data.running && !codexRunning) recordTurnStarted();
+            if (data.running && !codexRunning) recordTurnStarted(activeRuntimeResumePath);
             codexRunning = Boolean(data.running);
             queuedFollowUps = Array.isArray(data.queue) ? data.queue : [];
             if ('pendingUserInput' in data) {
@@ -4383,14 +4408,18 @@ const CLIENT_BUILD = '20260706-transfer-merge';
             }
             updateComposerControls();
             renderQueuePanel();
-            resumePill.textContent = data.resumed ? '已恢复' : '新会话';
-            const active = sessionsCache.find((s) => sameSessionPath(s.path, currentResumePath));
+            const shouldFollowRuntimeSession = wasFollowingRuntimeSession || !currentResumePath || sameSessionPath(currentResumePath, activeRuntimeResumePath);
+            if (shouldFollowRuntimeSession) currentResumePath = activeRuntimeResumePath;
+            resumePill.textContent = data.resumed && shouldFollowRuntimeSession ? '已恢复' : '新会话';
+            const active = shouldFollowRuntimeSession ? sessionsCache.find((s) => sameSessionPath(s.path, currentResumePath)) : null;
             const activeKnown = Boolean(active);
             if (active) {
               setActiveSession(active, false);
-            } else {
+            } else if (shouldFollowRuntimeSession) {
               threadTitle.textContent = data.resumed && data.resume_meta ? fmtDate(data.resume_meta.mtimeMs) : projectName(currentWorkdir);
               threadMeta.textContent = data.resume_meta ? `${toKB(data.resume_meta.size)} · ${data.resume_path}` : (currentWorkdir || '本地 Codex proto');
+              markSidebarActiveSession(currentResumePath);
+            } else {
               markSidebarActiveSession(currentResumePath);
             }
             const pathChanged = normalizeSessionPath(previousResumePath) !== normalizeSessionPath(currentResumePath);
@@ -4443,18 +4472,25 @@ const CLIENT_BUILD = '20260706-transfer-merge';
         });
         es.addEventListener('user_message', (event) => {
           const data = JSON.parse(event.data);
+          const eventSessionPath = sessionPathForStreamingEvent(data);
+          if (!shouldRenderStreamingEvent(eventSessionPath)) return;
+          activeStreamSessionPath = eventSessionPath || currentResumePath || activeRuntimeResumePath || '';
           if (pendingEditedUserEcho && Date.now() < pendingEditedUserEcho.expiresAt && String(data.text || '').trim() === pendingEditedUserEcho.text) {
             pendingEditedUserEcho = null;
             return;
           }
           activeTurnId = String(data.turnId || activeTurnId || '').trim();
-          addBubble(data.text || '', 'user', { attachments: data.attachments || [], turnId: activeTurnId, startedAt: data.startedAt || data.timestamp || '' });
+          addBubble(data.text || '', 'user', { attachments: data.attachments || [], turnId: activeTurnId, startedAt: data.startedAt || data.timestamp || '', sessionPath: activeStreamSessionPath });
         });
         es.addEventListener('delta', (event) => {
           const data = JSON.parse(event.data);
+          const eventSessionPath = sessionPathForStreamingEvent(data);
+          if (!shouldRenderStreamingEvent(eventSessionPath)) return;
+          activeStreamSessionPath = eventSessionPath || currentResumePath || activeRuntimeResumePath || '';
+          if (streamEl && streamEl.dataset.sessionPath && !sameSessionPath(streamEl.dataset.sessionPath, activeStreamSessionPath)) streamEl = null;
           if (!streamEl) {
             if (emptyState) emptyState.style.display = 'none';
-            streamEl = addBubble('', 'agent', { status: 'streaming', turnId: activeTurnId, question: questionForAssistant({ turnId: activeTurnId }) });
+            streamEl = addBubble('', 'agent', { status: 'streaming', turnId: activeTurnId, question: questionForAssistant({ turnId: activeTurnId }), sessionPath: activeStreamSessionPath });
           }
           const inner = streamEl.querySelector('.message-text');
           const raw = (streamEl.dataset.raw || '') + (data.text || '');
@@ -4467,17 +4503,26 @@ const CLIENT_BUILD = '20260706-transfer-merge';
         });
         es.addEventListener('message', (event) => {
           const data = JSON.parse(event.data);
+          const eventSessionPath = sessionPathForStreamingEvent(data);
+          if (!shouldRenderStreamingEvent(eventSessionPath)) {
+            if (streamEl && sameSessionPath(streamEl.dataset.sessionPath, eventSessionPath)) streamEl = null;
+            if (sameSessionPath(activeStreamSessionPath, eventSessionPath)) activeStreamSessionPath = null;
+            return;
+          }
+          activeStreamSessionPath = eventSessionPath || currentResumePath || activeRuntimeResumePath || '';
+          if (streamEl && streamEl.dataset.sessionPath && !sameSessionPath(streamEl.dataset.sessionPath, activeStreamSessionPath)) streamEl = null;
           const finalText = stripInternalMemoryBlocks(data.text || latestAgentMessageText);
           const meta = maybeNotifyAgentCompletion(data.text || latestAgentMessageText);
           if (streamEl) {
             streamEl.dataset.status = 'done';
             const statusEl = streamEl.querySelector('.message-status');
             if (statusEl) statusEl.textContent = bubbleStatusLabel('done');
-            applyAssistantMetadata(streamEl, finalText, { ...meta, turnId: meta.turnId || activeTurnId, question: questionForAssistant({ turnId: meta.turnId || activeTurnId }), sessionPath: currentResumePath });
+            applyAssistantMetadata(streamEl, finalText, { ...meta, turnId: meta.turnId || activeTurnId, question: questionForAssistant({ turnId: meta.turnId || activeTurnId }), sessionPath: activeStreamSessionPath || currentResumePath });
             streamEl = null;
           } else {
-            addBubble(finalText, 'agent', { ...meta, turnId: meta.turnId || activeTurnId, question: questionForAssistant({ turnId: meta.turnId || activeTurnId }), sessionPath: currentResumePath });
+            addBubble(finalText, 'agent', { ...meta, turnId: meta.turnId || activeTurnId, question: questionForAssistant({ turnId: meta.turnId || activeTurnId }), sessionPath: activeStreamSessionPath || currentResumePath });
           }
+          activeStreamSessionPath = null;
         });
         es.addEventListener('notification', (event) => {
           const data = JSON.parse(event.data);
