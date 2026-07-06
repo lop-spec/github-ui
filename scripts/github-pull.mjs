@@ -468,7 +468,7 @@ async function runWatch(rootDir, syncConfig, pullConfig) {
       timer = setTimeout(run, pullConfig.intervalMs);
     }
   };
-  console.log(`[${stamp()}] watching GitHub -> local portable source/rules (${pullConfig.owner}/${pullConfig.repo}#${pullConfig.branch}, ${pullConfig.intervalMs}ms)`);
+  console.log(`[${stamp()}] watching GitHub -> local portable source/rules/skills (${pullConfig.owner}/${pullConfig.repo}#${pullConfig.branch}, ${pullConfig.intervalMs}ms)`);
   run();
   process.on('SIGINT', () => {
     clearTimeout(timer);
