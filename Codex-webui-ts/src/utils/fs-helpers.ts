@@ -408,7 +408,8 @@ export function parseSessionMessagesPage(filePath: string | null, options: Sessi
   const total = all.length;
   const limit = clampSessionMessageLimit(options.limit);
   const rawBefore = Number(options.before);
-  const end = Number.isFinite(rawBefore) && rawBefore >= 0
+  const hasBefore = options.before !== null && options.before !== undefined && Number.isFinite(rawBefore) && rawBefore >= 0;
+  const end = hasBefore
     ? Math.max(0, Math.min(total, Math.floor(rawBefore)))
     : total;
   const start = Math.max(0, end - limit);
