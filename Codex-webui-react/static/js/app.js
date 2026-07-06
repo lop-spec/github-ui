@@ -4965,30 +4965,30 @@ const CLIENT_BUILD = '20260706-manual-projects';
           });
         }
       });
-      terminalSpawnBtn.addEventListener('click', () => spawnTerminal().catch((error) => setTerminalStatus(`终端创建失败：${error.message || error}`, true)));
-      terminalRefreshBtn.addEventListener('click', () => loadTerminalSessions().catch((error) => setTerminalStatus(`终端刷新失败：${error.message || error}`, true)));
-      terminalKillBtn.addEventListener('click', () => killActiveTerminal().catch((error) => setTerminalStatus(`终端结束失败：${error.message || error}`, true)));
-      terminalSendInputBtn.addEventListener('click', () => sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true)));
-      terminalStdinInput.addEventListener('keydown', (event) => {
+      terminalSpawnBtn?.addEventListener('click', () => spawnTerminal().catch((error) => setTerminalStatus(`终端创建失败：${error.message || error}`, true)));
+      terminalRefreshBtn?.addEventListener('click', () => loadTerminalSessions().catch((error) => setTerminalStatus(`终端刷新失败：${error.message || error}`, true)));
+      terminalKillBtn?.addEventListener('click', () => killActiveTerminal().catch((error) => setTerminalStatus(`终端结束失败：${error.message || error}`, true)));
+      terminalSendInputBtn?.addEventListener('click', () => sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true)));
+      terminalStdinInput?.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
           sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true));
         }
       });
-      gitRefreshBtn.addEventListener('click', () => loadGitPanel(gitPanelState.scope).catch((error) => setGitStatusLine(`Git 刷新失败：${error.message || error}`, true)));
-      gitOpenRepoBtn.addEventListener('click', () => {
+      gitRefreshBtn?.addEventListener('click', () => loadGitPanel(gitPanelState.scope).catch((error) => setGitStatusLine(`Git 刷新失败：${error.message || error}`, true)));
+      gitOpenRepoBtn?.addEventListener('click', () => {
         const repo = gitPanelState.status?.repoRoot || gitPanelState.status?.root || currentWorkdir;
         if (repo) openLocalPath(repo);
       });
-      gitScopeUnstaged.addEventListener('click', () => loadGitPanel('unstaged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
-      gitScopeStaged.addEventListener('click', () => loadGitPanel('staged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
-      gitStageSelected.addEventListener('click', () => runGitPathAction('/git/stage').catch((error) => setGitStatusLine(`暂存失败：${error.message || error}`, true)));
-      gitUnstageSelected.addEventListener('click', () => runGitPathAction('/git/unstage').catch((error) => setGitStatusLine(`取消暂存失败：${error.message || error}`, true)));
-      gitDiscardSelected.addEventListener('click', () => discardSelectedGitChanges().catch((error) => setGitStatusLine(`丢弃失败：${error.message || error}`, true)));
-      gitCommitBtn.addEventListener('click', () => commitGitChanges().catch((error) => setGitStatusLine(`提交失败：${error.message || error}`, true)));
-      gitPullBtn.addEventListener('click', () => pullGitChanges().catch((error) => setGitStatusLine(`拉取失败：${error.message || error}`, true)));
-      gitPushBtn.addEventListener('click', () => pushGitChanges().catch((error) => setGitStatusLine(`推送失败：${error.message || error}`, true)));
-      gitBranchCreate.addEventListener('click', () => createGitBranch().catch((error) => setGitStatusLine(`创建分支失败：${error.message || error}`, true)));
+      gitScopeUnstaged?.addEventListener('click', () => loadGitPanel('unstaged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
+      gitScopeStaged?.addEventListener('click', () => loadGitPanel('staged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
+      gitStageSelected?.addEventListener('click', () => runGitPathAction('/git/stage').catch((error) => setGitStatusLine(`暂存失败：${error.message || error}`, true)));
+      gitUnstageSelected?.addEventListener('click', () => runGitPathAction('/git/unstage').catch((error) => setGitStatusLine(`取消暂存失败：${error.message || error}`, true)));
+      gitDiscardSelected?.addEventListener('click', () => discardSelectedGitChanges().catch((error) => setGitStatusLine(`丢弃失败：${error.message || error}`, true)));
+      gitCommitBtn?.addEventListener('click', () => commitGitChanges().catch((error) => setGitStatusLine(`提交失败：${error.message || error}`, true)));
+      gitPullBtn?.addEventListener('click', () => pullGitChanges().catch((error) => setGitStatusLine(`拉取失败：${error.message || error}`, true)));
+      gitPushBtn?.addEventListener('click', () => pushGitChanges().catch((error) => setGitStatusLine(`推送失败：${error.message || error}`, true)));
+      gitBranchCreate?.addEventListener('click', () => createGitBranch().catch((error) => setGitStatusLine(`创建分支失败：${error.message || error}`, true)));
       projectOpenConfirm.addEventListener('click', () => openProjectFolder(projectPathInput.value));
       projectPickFolder.addEventListener('click', pickProjectFolder);
       projectBrowseUp.addEventListener('click', () => {
