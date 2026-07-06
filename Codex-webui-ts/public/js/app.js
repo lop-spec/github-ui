@@ -1,4 +1,4 @@
-const CLIENT_BUILD = '20260706-manual-projects';
+const CLIENT_BUILD = '20260706-project-actions';
       document.documentElement.dataset.webuiBuild = CLIENT_BUILD;
       const DEBUG_NO_EVENTS = new URLSearchParams(location.search).has('debug_no_events');
       const SIDEBAR_VISIBLE_LIMIT = 10;
@@ -18,6 +18,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
       const pinnedSessionsEl = $('pinnedSessions');
       const projectsEl = $('projects');
       const openFolderBtn = $('openFolderBtn');
+      const createProjectBtn = $('createProjectBtn');
       const restoreHistoryBtn = $('restoreHistoryBtn');
       const openAccountBtn = $('openAccountBtn');
       const historyBackBtn = $('historyBackBtn');
