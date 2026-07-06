@@ -236,16 +236,29 @@
               <div class="account-section-title">账号信息</div>
               <div class="account-identity" id="accountIdentity">等待读取账号状态。</div>
             </section>
-            <section class="account-section">
-              <div class="account-section-title">Account limits</div>
-              <div class="account-limit-grid" id="accountLimitCards"></div>
+            <section class="account-limits-section" id="accountLimitsSection" hidden>
+              <button type="button" class="account-limits-trigger" id="accountLimitsToggle" aria-expanded="false" aria-controls="accountLimitContent">
+                <span class="account-limits-trigger-left">
+                  <span class="account-limits-trigger-icon" aria-hidden="true">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 19a8 8 0 1 1 14 0M12 12l4-4M8 19h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </span>
+                  <span class="account-limits-trigger-copy">
+                    <span class="account-limits-trigger-text">Account limits</span>
+                    <span class="account-limits-trigger-caption" id="accountLimitsCaption">等待读取额度。</span>
+                  </span>
+                </span>
+                <span class="account-limits-arrow" aria-hidden="true">›</span>
+              </button>
+              <div class="account-limits-content" id="accountLimitContent" hidden>
+                <div class="account-limit-grid" id="accountLimitCards"></div>
+              </div>
             </section>
-            <section class="account-section">
+            <section class="account-section" id="accountUsageSection" hidden>
               <div class="account-section-title">使用概览</div>
               <div class="account-usage-grid" id="accountUsageSummary"></div>
             </section>
             <details class="account-raw">
-              <summary>详细信息</summary>
+              <summary>调试详情</summary>
               <pre id="accountRawDetails"></pre>
             </details>
             <div class="account-status" id="accountStatusLine" role="status"></div>
