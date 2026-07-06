@@ -2881,17 +2881,28 @@ const CLIENT_BUILD = '20260706-manual-projects';
         const timeline = $('timeline');
         const previousHeight = timeline.scrollHeight;
         const previousTop = timeline.scrollTop;
-        const response = await fetch(transcriptPageEndpoint(path, before), { cache: 'no-store' });
-        const data = await response.json();
-        if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
-        if (!sameSessionPath(path, currentResumePath)) return;
-        const anchor = transcriptHistoryLoader?.nextSibling || log.firstChild;
-        renderTranscriptPageMessages(data.messages || [], path, anchor);
-        updateTranscriptPageState(data, path);
-        renderTranscriptHistoryLoader();
-        timeline.scrollTop = previousTop + (timeline.scrollHeight - previousHeight);
-        updateTokenStats();
-        exposeDebugState();
+        try {
+          const response = await fetch(transcriptPageEndpoint(path, before), { cache: 'no-store' });
+          const data = await response.json();
+          if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+          if (!sameSessionPath(path, currentResumePath)) {
+            transcriptPageState = { ...transcriptPageState, loadingOlder: false };
+            renderTranscriptHistoryLoader();
+            return;
+          }
+          const anchor = transcriptHistoryLoader?.nextSibling || log.firstChild;
+          renderTranscriptPageMessages(data.messages || [], path, anchor);
+          updateTranscriptPageState(data, path);
+          renderTranscriptHistoryLoader();
+          timeline.scrollTop = previousTop + (timeline.scrollHeight - previousHeight);
+          updateTokenStats();
+          exposeDebugState();
+        } catch (error) {
+          transcriptPageState = { ...transcriptPageState, loadingOlder: false };
+          renderTranscriptHistoryLoader();
+          exposeDebugState();
+          throw error;
+        }
       }
       function updateTokenStats() {
         let allText = '';
