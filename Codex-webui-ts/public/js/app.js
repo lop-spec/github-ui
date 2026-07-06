@@ -2820,6 +2820,78 @@ const CLIENT_BUILD = '20260706-manual-projects';
         const timeline = $('timeline');
         timeline.scrollTop = timeline.scrollHeight;
       }
+      function transcriptPageEndpoint(path, before = null) {
+        const params = new URLSearchParams({ limit: String(TRANSCRIPT_PAGE_LIMIT) });
+        if (path) params.set('path', path);
+        if (before !== null && before !== undefined) params.set('before', String(before));
+        return `/session-messages?${params.toString()}`;
+      }
+      function resetTranscriptPageState(path = '') {
+        transcriptPageState = { path, total: 0, start: 0, end: 0, nextBefore: null, hasMoreOlder: false, loadingOlder: false };
+        transcriptHistoryLoader?.remove();
+        transcriptHistoryLoader = null;
+      }
+      function updateTranscriptPageState(data = {}, path = transcriptPageState.path) {
+        transcriptPageState = {
+          ...transcriptPageState,
+          path: path || transcriptPageState.path || '',
+          total: Number(data.total || 0) || 0,
+          start: Number(data.start || 0) || 0,
+          end: Number(data.end || 0) || 0,
+          nextBefore: data.nextBefore ?? null,
+          hasMoreOlder: Boolean(data.hasMoreOlder),
+          loadingOlder: false
+        };
+      }
+      function renderTranscriptHistoryLoader() {
+        if (!transcriptPageState.hasMoreOlder && !transcriptPageState.loadingOlder) {
+          transcriptHistoryLoader?.remove();
+          transcriptHistoryLoader = null;
+          return;
+        }
+        if (!transcriptHistoryLoader) {
+          transcriptHistoryLoader = document.createElement('div');
+          transcriptHistoryLoader.className = 'transcript-history-loader';
+          transcriptHistoryLoader.innerHTML = '<button type="button" class="transcript-history-load-btn"></button>';
+          transcriptHistoryLoader.querySelector('button').addEventListener('click', () => {
+            loadOlderTranscriptPage().catch((error) => addSystem(`加载更早历史失败：${error.message || error}`, true));
+          });
+        }
+        const button = transcriptHistoryLoader.querySelector('button');
+        const remaining = Math.max(0, transcriptPageState.start);
+        button.disabled = transcriptPageState.loadingOlder;
+        button.textContent = transcriptPageState.loadingOlder ? '正在加载更早历史...' : `加载更早历史（剩余 ${remaining} 条）`;
+        if (transcriptHistoryLoader.parentElement !== log) log.insertBefore(transcriptHistoryLoader, log.firstChild);
+        else if (log.firstChild !== transcriptHistoryLoader) log.insertBefore(transcriptHistoryLoader, log.firstChild);
+      }
+      function renderTranscriptPageMessages(messages, path, beforeNode = null) {
+        (messages || []).forEach((message) => {
+          addTimelineItem(message, { scroll: false, sessionPath: path || currentResumePath, beforeNode });
+        });
+      }
+      async function loadOlderTranscriptPage() {
+        if (!transcriptPageState.hasMoreOlder || transcriptPageState.loadingOlder) return;
+        const path = transcriptPageState.path || currentResumePath;
+        if (!path) return;
+        const before = transcriptPageState.nextBefore ?? transcriptPageState.start;
+        if (before === null || before === undefined) return;
+        transcriptPageState = { ...transcriptPageState, loadingOlder: true };
+        renderTranscriptHistoryLoader();
+        const timeline = $('timeline');
+        const previousHeight = timeline.scrollHeight;
+        const previousTop = timeline.scrollTop;
+        const response = await fetch(transcriptPageEndpoint(path, before), { cache: 'no-store' });
+        const data = await response.json();
+        if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+        if (!sameSessionPath(path, currentResumePath)) return;
+        const anchor = transcriptHistoryLoader?.nextSibling || log.firstChild;
+        renderTranscriptPageMessages(data.messages || [], path, anchor);
+        updateTranscriptPageState(data, path);
+        renderTranscriptHistoryLoader();
+        timeline.scrollTop = previousTop + (timeline.scrollHeight - previousHeight);
+        updateTokenStats();
+        exposeDebugState();
+      }
       function updateTokenStats() {
         let allText = '';
         log.querySelectorAll('.message-text').forEach((el) => { allText += el.textContent + '\n'; });
