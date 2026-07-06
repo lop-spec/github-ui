@@ -39,52 +39,13 @@ export const DEFAULT_PULL_CONFIG = {
     'Codex-webui-react/history.json',
     'codex/rules/default.rules',
     'codex/skills/.system/**',
-    'codex/config/**',
     '.codex/**',
     '.agents/**',
     'logs/**',
     'outputs/**'
   ],
-  protectedTerms: [
-    'Tailscale',
-    'taild612f8.ts.net',
-    'trycloudflare',
-    'cloudflared',
-    'public-tunnel',
-    'publicTunnel',
-    'CODEX_WEBUI_PUBLIC_PASSWORD',
-    'CODEX_WEBUI_PUBLIC_URL',
-    'CODEX_APP_SERVER_URL',
-    '5055',
-    '5056',
-    '5155',
-    '5156',
-    '127.0.0.1',
-    'localhost',
-    'localPath',
-    'openLocalPath',
-    'ShellExecute',
-    'p2p-phone',
-    'p2p-transfer',
-    'p2p-helper',
-    'androidInbox',
-    'Codex_RECYCLE',
-    'C:\\Users\\lop',
-    'C:/Users/lop'
-  ],
-  protectedRuleTerms: [
-    '本机',
-    '公网',
-    'Tailscale',
-    'trycloudflare',
-    '5055',
-    '5056',
-    '5155',
-    '5156',
-    'Codex_RECYCLE',
-    'C:\\Users\\lop',
-    'C:/Users/lop'
-  ]
+  protectedTerms: [],
+  protectedRuleTerms: []
 };
 
 function stamp() {

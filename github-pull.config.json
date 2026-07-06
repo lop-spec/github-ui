@@ -17,7 +17,6 @@
     "codex/rules/default.rules",
     "codex/skills/.system/**",
     "**/.system/**",
-    "codex/config/developer_instructions.mirror.toml",
     "**/config.toml"
   ],
   "protectedTerms": [],

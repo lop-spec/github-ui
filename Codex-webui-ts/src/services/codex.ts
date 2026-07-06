@@ -692,7 +692,7 @@ export class CodexService extends EventEmitter {
     await this.ensureAppServer();
     if (this.activeThreadId) return;
 
-    let resumePath = this.lastResumePath;
+    let resumePath = this.isExistingResumePath(this.lastResumePath) ? this.lastResumePath : null;
     if (!resumePath && resumeAllowed() && !this.suppressAutoResume) resumePath = this.findDefaultResumePath();
     if (resumePath) {
       try {
@@ -964,7 +964,7 @@ export class CodexService extends EventEmitter {
     const turn = params.turn || {};
     const threadId = params.threadId || this.activeThreadId;
     const durationMs = this.activeStartedAtMs ? Date.now() - this.activeStartedAtMs : 0;
-    const latest = this.findRolloutByThreadId(threadId) || this.lastResumePath;
+    const latest = this.findRolloutByThreadId(threadId) || (this.isExistingResumePath(this.lastResumePath) ? this.lastResumePath : null);
     if (latest) {
       this.lastResumePath = latest;
       this.recordResume(latest);
@@ -1294,7 +1294,7 @@ export class CodexService extends EventEmitter {
     ];
     const imageArgs = imagePaths.flatMap((filePath) => ['--image', filePath]);
 
-    const sessionId = this.sessionIdFromPath(this.lastResumePath);
+    const sessionId = this.sessionIdFromPath(this.isExistingResumePath(this.lastResumePath) ? this.lastResumePath : null);
     if (sessionId) return ['exec', 'resume', ...common, ...imageArgs, '--all', sessionId, '-'];
     return ['exec', ...common, ...imageArgs, '-C', this.currentWorkdir, '-'];
   }

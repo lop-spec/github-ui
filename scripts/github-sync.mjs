@@ -23,6 +23,8 @@ export const DEFAULT_CONFIG = {
   maxChangesPerCommit: 800,
   include: [
     'AGENTS.md',
+    'github-pull.config.json',
+    'github-sync.config.example.json',
     'package.json',
     'RULES.md',
     'sync-meta/source.json',
@@ -142,10 +144,26 @@ export const DEFAULT_CONFIG = {
     '**/.env',
     '**/.env.*',
     'github-sync.config.local.json',
+    'Codex-webui-ts/src/public-tunnel.ts',
+    'Codex-webui-react/server/public-tunnel.ts',
+    'Codex-webui-ts/src/p2p-helper.ts',
+    'Codex-webui-ts/public/p2p-phone.html',
+    'Codex-webui-ts/public/css/p2p-phone.css',
+    'Codex-webui-ts/public/js/p2p-phone.js',
+    'Codex-webui-ts/public/js/p2p-transfer.js',
     '**/*.pem',
     '**/*.key',
     '**/*.pfx',
     '**/*.crt'
+  ],
+  pruneRemote: [
+    'Codex-webui-ts/src/public-tunnel.ts',
+    'Codex-webui-react/server/public-tunnel.ts',
+    'Codex-webui-ts/src/p2p-helper.ts',
+    'Codex-webui-ts/public/p2p-phone.html',
+    'Codex-webui-ts/public/css/p2p-phone.css',
+    'Codex-webui-ts/public/js/p2p-phone.js',
+    'Codex-webui-ts/public/js/p2p-transfer.js'
   ],
   watchTargets: [
     'package.json',
@@ -282,6 +300,7 @@ export function loadConfig(rootDir = root, env = process.env) {
 
   config.include = (config.include || []).map(toPosixPath).filter(Boolean);
   config.exclude = (config.exclude || []).map(toPosixPath).filter(Boolean);
+  config.pruneRemote = (config.pruneRemote || []).map(toPosixPath).filter(Boolean);
   config.externalRoots = normalizeExternalRoots(rootDir, config);
   config.configMirror = normalizeConfigMirror(rootDir, config.configMirror);
   config.watchTargets = (config.watchTargets || []).map(toPosixPath).filter(Boolean);
@@ -490,8 +509,10 @@ export function collectSyncFiles(rootDir = root, config = loadConfig(rootDir)) {
   const files = [];
   const skipped = [];
   const seen = new Set();
+  const configMirrorRepoPath = config.configMirror?.repoPath || '';
 
   function addFile(absPath, relPath) {
+    if (configMirrorRepoPath && toPosixPath(relPath) === configMirrorRepoPath) return;
     addCollectedFile(files, skipped, seen, config, shouldSync, absPath, relPath);
   }
 
@@ -760,10 +781,11 @@ export async function syncOnce({ rootDir = root, config = loadConfig(rootDir), d
     remote = await getRemoteState(config, repoState);
   }
   const shouldSync = createSyncFilter(config);
+  const shouldPruneRemote = createPathMatcher(config.pruneRemote || []);
   const localByPath = new Map(snapshot.files.map((file) => [file.path, file]));
   const changedFiles = snapshot.files.filter((file) => remote.blobs.get(file.path) !== file.sha);
   const removedPaths = [...remote.blobs.keys()]
-    .filter((remotePath) => shouldSync(remotePath) && !localByPath.has(remotePath));
+    .filter((remotePath) => (shouldSync(remotePath) || shouldPruneRemote(remotePath)) && !localByPath.has(remotePath));
   const changeCount = changedFiles.length + removedPaths.length;
   assertChangeLimit(config, changeCount);
 
@@ -950,6 +972,7 @@ function statusReport(rootDir, config) {
     private: Boolean(config.private),
     includeCount: config.include.length,
     excludeCount: config.exclude.length,
+    pruneRemoteCount: config.pruneRemote.length,
     externalRootCount: config.externalRoots.length,
     watchTargetCount: config.watchTargets.length,
     ...summary
