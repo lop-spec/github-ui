@@ -6,13 +6,18 @@
 
 - 按 2026-07-04 本机横评强制路由 shell：`cmd` 负责 shell 启动/短命令、固定字符串搜索、读文本、端口监听探测、小目录复制删除、`rg/curl/robocopy/where` 等简单外部 exe；`nu` 负责工具定位、大目录枚举、JSON/table 解析筛选、进程列表过滤、HTTP 响应解析和结构化管道。
 - 用户层禁用 `pwsh` 作为默认执行壳；除非上级安全规则、Windows 对象模型、注册表/服务/WMI/CIM、锁定文件/安全递归移动删除，或 `cmd/nu` 已验证无法表达，否则不得主动改用 `pwsh`。例外使用必须说明原因。
-- 简单读文件、查文本、列目录、`rg/git/jq/where` 等外部工具必须用 `cmd`；`exec_command(shell="cmd")` 只用于无嵌套引号、无空格敏感参数、无 `|&<>()%` 控制符的扁平命令体。
-- 复杂 `cmd` 先转通用 wrapper，不许归因给 `cmd` 本身：含带空格路径、中文多词、正则管道、括号、重定向、多段命令、内联代码或嵌套引号时，用 `cmd.exe /d /s /c "..."`，wrapper 内部参数引号写成 `""...""`；仍复杂就落临时 `.cmd`/`.js`/参数文件。
-- 固定字符串搜索优先 `rg -n -F -- "text" "file"`；正则优先 `rg -n -- "pattern" "file"`；多个词不要拼 `a|b c`，改用多个 `-e` 或 pattern 文件，例：`rg -n -e text1 -e "text two" -- "file"`。
-- `findstr` 只用于单词级简单过滤；多词、中文、标点、正则、括号和路径有空格时，改用 `rg -F`、`rg -e` 或脚本探针，禁止堆多层转义。
+- 总原则：`cmd` 支持引号、反引号、空格和转义；失败默认是 Codex/JSON/PowerShell/Node/Markdown/正则等外层先吃掉字符，或没有按 cmd 语法生成，禁止把问题归因给 `cmd` 本身。
+- 统一转换顺序：先判断能否用 argv/参数数组/直接 EXE 入口，能用就不要拼 shell 字符串；必须走 `cmd` 时先写目标 cmd 标准形态，再只给当前执行器补一层外层引号；仍不稳定就生成临时 `.cmd`/参数文件/输入文件后用 `cmd` 执行，这仍然是 cmd 方案，不是绕开 cmd。
+- `cmd` 标准入口优先用 `cmd.exe /d /q /v:off /s /c "..."`；程序路径含空格时标准形态是 `cmd.exe /d /q /v:off /s /c ""C:\Program Files\Tool\tool.exe" "arg with space""`。在 `exec_command` 等外层还会解析引号的场景，先保留这个目标形态，再按外层要求把内层 `"` 成对加倍或改临时 `.cmd`，不要凭感觉混写。
+- 简单读文件、查文本、列目录、`rg/git/jq/where` 等外部工具必须用 `cmd`；`exec_command(shell="cmd")` 只用于无嵌套引号、无空格敏感参数、无 `|&<>()^%!` 控制符的扁平命令体。
+- cmd 元字符作字面量时用 caret 转义：`^&`、`^|`、`^<`、`^>`、`^(`、`^)`、`^^`。双引号内的元字符通常作为参数字符传给目标程序；若外层会剥掉双引号，立即改临时 `.cmd` 或参数文件。
+- 空格路径和空格参数用双引号包住完整 argv；单引号在 cmd 里不是 quoting，只是普通字符；反引号在 cmd 里也是普通字符，禁止把 PowerShell 的反引号当 cmd 转义符，反引号出错时优先判定为外层解析问题并改 `.cmd`/文件输入。
+- 变量一律用 `set "NAME=value"` 和 `%NAME%`；默认 `/v:off` 防止 `!` 被延迟扩展吞掉。批处理文件中要输出字面 `%` 写 `%%`；需要循环内更新变量时才显式 `/v:on` 并处理 `!`。
+- 固定字符串搜索优先 `rg -n -F -- "text" "file"`；正则优先 `rg -n -- "pattern" "file"`；多个词用多个 `-e`；含引号、反引号、中文、换行、复杂正则或大量标点时，统一改 pattern 文件：`rg -n -F -f patterns.txt -- "file"`，不要继续堆转义。
+- `findstr` 只用于单词级简单过滤；多词、中文、标点、正则、括号和路径有空格时，改用 `rg -F`、`rg -e`、pattern 文件或脚本探针。
 - 大复制优先 `robocopy`；超大枚举或结构化管道必须优先用 `nu`。
-- `cmd` 中禁止使用 PowerShell 语法如 `$ts=...`、`$(...)`、反引号和对象管道；需要变量用 `set "NAME=value"` 和 `%NAME%`，需要时间戳优先固定文件名、纯 cmd 片段或临时脚本。
-- `node -e`、`python -c`、JSON、HTML、正则和多行逻辑只允许短表达式；一旦出现引号嵌套、反斜杠、括号或中文，必须改临时脚本加 argv/文件输入，不能继续硬拼一行。
+- `cmd` 中禁止使用 PowerShell 语法如 `$ts=...`、`$(...)`、对象管道和反引号转义；需要时间戳用纯 cmd 语法、固定文件名或临时脚本。
+- `node -e`、`python -c`、JSON、HTML、正则和多行逻辑只允许短表达式；一旦出现引号嵌套、反斜杠、括号、中文或反引号，必须改临时脚本加 argv/文件输入，不能继续硬拼一行。
 - Windows 下从 Node/脚本启动 `.cmd` wrapper 易受 spawn/引号影响；能定位到真实 JS/EXE 入口就直调入口，必须跑 `.cmd`/`npm` 时用 shell 模式或显式 `cmd.exe /d /s /c`。
 - 当前 `exec_command(shell="cmd")` 中，路径不含空格且命令扁平时可不加引号；路径含空格或参数需要引号时，进入复杂 wrapper/参数文件模板，不能把引号当字面量传给 `rg/python/nu` 导致 `os error 123`。
 - `nu`/`nush` 一律按 Nushell 处理：优先用 `C:\Users\lop\AppData\Local\Programs\nu\bin\nu.exe --no-config-file --no-history --no-std-lib -c "..."`；脚本内路径用正斜杠和单引号，外部命令加 `^`，丢弃输出用 `| ignore`，避免把 `>nul`、`%VAR%`、`&&`、`||` 等 cmd 语法塞进 nu。

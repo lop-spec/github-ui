@@ -13,6 +13,9 @@
     "serve": "node dist/server.js",
     "p2p": "node dist/p2p-helper.js",
     "public": "node dist/public-tunnel.js",
+    "app": "node scripts/webui-app.mjs --launch",
+    "app:install": "node scripts/webui-app.mjs --install-shortcuts",
+    "app:switch": "node scripts/webui-app.mjs --install-shortcuts --launch",
     "benchmark:browser-shells": "node scripts/benchmark-browser-shells.mjs",
     "test": "node --test --test-concurrency=1 tests/*.test.js"
   },

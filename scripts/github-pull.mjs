@@ -20,7 +20,7 @@ export const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 
 export const DEFAULT_PULL_CONFIG = {
   owner: 'lop-spec',
-  repo: 'github-ui',
+  repo: 'codex_webui_sync',
   branch: 'main',
   intervalMs: 30000,
   maxApplyPerRun: 200,
