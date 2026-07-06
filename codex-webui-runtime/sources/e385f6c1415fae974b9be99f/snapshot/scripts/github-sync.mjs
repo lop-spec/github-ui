@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+export const SYNC_SCOPE_SCHEMA_VERSION = 2;
 
 export const DEFAULT_CONFIG = {
   owner: '',
@@ -23,6 +24,7 @@ export const DEFAULT_CONFIG = {
   maxFileBytes: 2 * 1024 * 1024,
   maxChangesPerCommit: 800,
   include: [
+    '.gitignore',
     'AGENTS.md',
     'github-pull.config.json',
     'github-sync.config.example.json',
@@ -40,24 +42,24 @@ export const DEFAULT_CONFIG = {
     'parity/**',
     'scripts/**',
     'Codex-webui-ts/AGENTS.md',
+    'Codex-webui-ts/INSTALL_WEBUI_APP.cmd',
     'Codex-webui-ts/RULES.md',
-    'Codex-webui-ts/*.cmd',
-    'Codex-webui-ts/*.vbs',
-    'Codex-webui-ts/*.cjs',
-    'Codex-webui-ts/scripts/**',
+    'Codex-webui-ts/START_WEBUI_APP.cmd',
     'Codex-webui-ts/package.json',
+    'Codex-webui-ts/scripts/**',
     'Codex-webui-ts/tsconfig*.json',
     'Codex-webui-ts/src/**',
     'Codex-webui-ts/public/**',
     'Codex-webui-react/AGENTS.md',
+    'Codex-webui-react/components.json',
     'Codex-webui-react/RULES.md',
     'Codex-webui-react/package.json',
+    'Codex-webui-react/scripts/**',
     'Codex-webui-react/tsconfig*.json',
     'Codex-webui-react/vite.config.*',
     'Codex-webui-react/index.html',
     'Codex-webui-react/server/**',
     'Codex-webui-react/src/**',
-    'Codex-webui-react/static/**',
     'Codex-webui-react/docs/source-to-target-ledger.md'
   ],
   externalRoots: [
@@ -96,9 +98,14 @@ export const DEFAULT_CONFIG = {
         '**/venv/**',
         '**/outputs/**',
         '**/logs/**',
+        '**/run-logs/**',
+        '**/tmp/**',
+        '**/temp/**',
         '**/*.pyc',
         '**/*.tmp',
         '**/*.bak*',
+        '**/config.toml',
+        '**/default.rules',
         '**/.env',
         '**/.env.*'
       ]
@@ -127,19 +134,21 @@ export const DEFAULT_CONFIG = {
     '**/outputs/**',
     '**/logs/**',
     '**/run-logs/**',
-    '**/docs/**',
     '**/tmp/**',
     '**/temp/**',
     '**/.cache/**',
     '**/transfers/**',
+    '**/uploads/**',
     '**/sessions/**',
-    '**/auth/**',
+    '**/history/**',
     '**/tests/**',
+    '**/docs/**',
+    '**/auth/**',
     '**/history.json',
     '**/package-lock.json',
     '**/default.rules',
-    'codex/skills/.system/**',
     '**/.system/**',
+    '**/config.toml',
     '**/*.log',
     '**/*.tmp',
     '**/*.bak*',
@@ -156,7 +165,7 @@ export const DEFAULT_CONFIG = {
     'github-sync.config.json',
     'github-sync.config.local.json',
     'github-pull.config.local.json',
-    '**/config.toml',
+    'Codex-webui-react/static/**',
     '**/*.pem',
     '**/*.key',
     '**/*.pfx',
@@ -165,7 +174,9 @@ export const DEFAULT_CONFIG = {
   pruneRemote: [
     'github-sync.config.json',
     'github-sync.config.local.json',
-    'github-pull.config.local.json'
+    'github-pull.config.local.json',
+    'config.toml',
+    'Codex-webui-react/static'
   ],
   watchTargets: [
     'package.json',
@@ -180,14 +191,8 @@ export const DEFAULT_CONFIG = {
     '~/Documents/Codex/RULES.md',
     'parity',
     'scripts',
-    'github-pull.config.json',
-    'github-sync.config.example.json',
     'Codex-webui-ts/AGENTS.md',
     'Codex-webui-ts/RULES.md',
-    'Codex-webui-ts/*.cmd',
-    'Codex-webui-ts/*.vbs',
-    'Codex-webui-ts/*.cjs',
-    'Codex-webui-ts/scripts',
     'Codex-webui-ts/package.json',
     'Codex-webui-ts/tsconfig.json',
     'Codex-webui-ts/src',
@@ -199,9 +204,7 @@ export const DEFAULT_CONFIG = {
     'Codex-webui-react/vite.config.ts',
     'Codex-webui-react/index.html',
     'Codex-webui-react/server',
-    'Codex-webui-react/src',
-    'Codex-webui-react/static',
-    'Codex-webui-react/docs/source-to-target-ledger.md'
+    'Codex-webui-react/src'
   ]
 };
 
@@ -219,12 +222,16 @@ const PRUNE_DIR_NAMES = new Set([
   'tmp',
   'temp',
   '.cache',
+  'docs',
   '__pycache__',
   '.pytest_cache',
   '.venv',
   'venv',
   'transfers',
-  'sessions'
+  'uploads',
+  'sessions',
+  'auth',
+  '.system'
 ]);
 
 function stamp() {
@@ -415,14 +422,34 @@ function syncPathCategory(relPath) {
   const normalized = toPosixPath(relPath);
   if (/^Codex-webui-(ts|react)\//.test(normalized)) return 'webui-source';
   if (/^(AGENTS\.md|RULES\.md|codex\/(AGENTS\.md|agents\/|prompts\/|rules\/|skills\/|workspace\/))/.test(normalized)) return 'rules';
-  if (/^scripts\/.*\.(mjs|js|cmd|ps1|sh)$/i.test(normalized)) return 'runtime-script';
+  if (/^Codex-webui-ts\/(START|INSTALL)_WEBUI_APP\.cmd$/i.test(normalized)) return 'runtime-script';
+  if (/(^|\/)scripts\/.*\.(mjs|js|cmd|ps1|sh)$/i.test(normalized)) return 'runtime-script';
   if (/config|example/i.test(normalized)) return 'config-example';
   return 'source';
 }
 
+export function portableScopeHash(config = DEFAULT_CONFIG) {
+  const externalRoots = (config.externalRoots || []).map((item) => ({
+    repoPath: toPosixPath(item.repoPath || ''),
+    include: (item.include || []).map(toPosixPath).sort(),
+    exclude: (item.exclude || []).map(toPosixPath).sort()
+  })).sort((a, b) => a.repoPath.localeCompare(b.repoPath));
+  const payload = {
+    version: SYNC_SCOPE_SCHEMA_VERSION,
+    runtimeRoot: runtimeRootPath(config),
+    include: (config.include || []).map(toPosixPath).sort(),
+    exclude: (config.exclude || []).map(toPosixPath).sort(),
+    externalRoots,
+    configMirrorRepoPath: toPosixPath(config.configMirror?.repoPath || '')
+  };
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex').slice(0, 24);
+}
+
 function manifestBuffer(rootDir, config, snapshot, source) {
   const manifest = {
-    version: 1,
+    version: 2,
+    scopeSchemaVersion: SYNC_SCOPE_SCHEMA_VERSION,
+    scopeHash: portableScopeHash(config),
     source,
     generatedAt: new Date().toISOString(),
     fullSnapshot: true,
