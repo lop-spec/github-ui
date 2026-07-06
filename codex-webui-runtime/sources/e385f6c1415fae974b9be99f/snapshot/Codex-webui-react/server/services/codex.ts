@@ -264,12 +264,19 @@ export class CodexService extends EventEmitter {
     this.stopExec(cb);
   }
 
+  private clearUserStoppedRuntimeState(): void {
+    this.activeTurnId = null;
+    this.activeThreadRunning = false;
+    this.activeStartedAtMs = 0;
+    this.pendingUserInputs.clear();
+    this.clearGuidanceInputs(false);
+  }
+
   public cancelActiveTurn(cb?: () => void): void {
     if (!this.useAppServerBackend()) {
       this.stopExec(cb);
       return;
     }
-    let interrupted = false;
     (async () => {
       if (!this.activeTurnId && this.activeThreadRunning) await this.recoverActiveTurnId();
       const threadId = this.activeThreadId;
@@ -279,18 +286,12 @@ export class CodexService extends EventEmitter {
         return;
       }
       await this.appServer.request('turn/interrupt', { threadId, turnId }, 15000);
-      interrupted = true;
     })()
       .catch((error) => this.broadcastStderr(`停止失败：${error.message || error}`))
       .finally(() => {
-        if (interrupted) {
-        this.activeTurnId = null;
-        this.activeThreadRunning = false;
-        this.activeStartedAtMs = 0;
-        this.clearGuidanceInputs(false);
-      }
-      this.emit('status_update');
-      if (cb) cb();
+        this.clearUserStoppedRuntimeState();
+        this.emit('status_update');
+        if (cb) cb();
       });
   }
 

@@ -1,4 +1,4 @@
-const CLIENT_BUILD = '20260706-account-parity';
+const CLIENT_BUILD = '20260706-reply-layout-v1';
       document.documentElement.dataset.webuiBuild = CLIENT_BUILD;
       const DEBUG_NO_EVENTS = new URLSearchParams(location.search).has('debug_no_events');
       const SIDEBAR_VISIBLE_LIMIT = 10;
@@ -85,7 +85,6 @@ const CLIENT_BUILD = '20260706-account-parity';
       const threadTitle = $('threadTitle');
       const threadMeta = $('threadMeta');
       const resumePill = $('resumePill');
-      const modelPill = $('modelPill');
       const tokenStats = $('tokenStats');
       const accountIdentity = $('accountIdentity');
       const accountLimitsSection = $('accountLimitsSection');
@@ -732,15 +731,44 @@ const CLIENT_BUILD = '20260706-account-parity';
         const lines = String(markdown || '').split(/\r?\n/);
         const out = [];
         let paragraph = [];
+        let list = null;
+        let quote = [];
         const flushParagraph = () => {
           if (!paragraph.length) return;
           out.push(`<p>${renderInlineMarkdown(paragraph.join(' '))}</p>`);
           paragraph = [];
         };
+        const flushList = () => {
+          if (!list) return;
+          const tag = list.type === 'ordered' ? 'ol' : 'ul';
+          const className = list.type === 'ordered' ? 'message-list message-list-ordered' : 'message-list message-list-unordered';
+          out.push(`<${tag} class="${className}">${list.items.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join('')}</${tag}>`);
+          list = null;
+        };
+        const flushQuote = () => {
+          if (!quote.length) return;
+          out.push(`<blockquote class="message-callout"><p>${renderInlineMarkdown(quote.join(' '))}</p></blockquote>`);
+          quote = [];
+        };
+        const flushFlow = () => {
+          flushParagraph();
+          flushList();
+          flushQuote();
+        };
+        const pushListItem = (type, value) => {
+          flushParagraph();
+          flushQuote();
+          if (!list || list.type !== type) {
+            flushList();
+            list = { type, items: [] };
+          }
+          list.items.push(value);
+        };
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i] || '';
+          const trimmed = line.trim();
           if (line.trim().startsWith('```')) {
-            flushParagraph();
+            flushFlow();
             const code = [];
             i++;
             while (i < lines.length && !(lines[i] || '').trim().startsWith('```')) {
@@ -750,8 +778,38 @@ const CLIENT_BUILD = '20260706-account-parity';
             out.push(`<pre class="message-code"><code>${escapeHtml(code.join('\n'))}</code></pre>`);
             continue;
           }
-          if (line.includes('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1] || '')) {
+          const headingMatch = trimmed.match(/^(#{1,4})\s+(.+)$/);
+          if (headingMatch) {
+            flushFlow();
+            const level = Math.min(headingMatch[1].length, 4);
+            const tag = `h${Math.min(level + 1, 4)}`;
+            out.push(`<${tag} class="message-heading message-heading-level-${level}">${renderInlineMarkdown(headingMatch[2])}</${tag}>`);
+            continue;
+          }
+          if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+            flushFlow();
+            out.push('<hr class="message-divider" />');
+            continue;
+          }
+          const quoteMatch = trimmed.match(/^>\s?(.*)$/);
+          if (quoteMatch) {
             flushParagraph();
+            flushList();
+            quote.push(quoteMatch[1]);
+            continue;
+          }
+          const orderedMatch = trimmed.match(/^\d+[\.)]\s+(.+)$/);
+          if (orderedMatch) {
+            pushListItem('ordered', orderedMatch[1]);
+            continue;
+          }
+          const unorderedMatch = trimmed.match(/^[-*+]\s+(.+)$/);
+          if (unorderedMatch) {
+            pushListItem('unordered', unorderedMatch[1]);
+            continue;
+          }
+          if (line.includes('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1] || '')) {
+            flushFlow();
             const headers = splitTableRow(line);
             i += 2;
             const rows = [];
@@ -764,12 +822,14 @@ const CLIENT_BUILD = '20260706-account-parity';
             continue;
           }
           if (!line.trim()) {
-            flushParagraph();
+            flushFlow();
             continue;
           }
+          flushList();
+          flushQuote();
           paragraph.push(line.trim());
         }
-        flushParagraph();
+        flushFlow();
         return out.join('');
       }
       function renderAttachmentImages(attachments = []) {
@@ -1002,6 +1062,22 @@ const CLIENT_BUILD = '20260706-account-parity';
           addBubble(`Status\n\n${localStatus}\n\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\``, 'agent');
         } catch (error) {
           addSystem(`${localStatus}\n\n账号状态读取失败：${error.message || error}`, true);
+        }
+      }
+      async function requestWebUiServiceAction(action) {
+        const endpoint = action === 'restart' ? '/webui/restart' : '/webui/recover';
+        const label = action === 'restart' ? '重启' : '恢复';
+        const button = action === 'restart' ? $('restartBtn') : $('recoverBtn');
+        if (button) button.disabled = true;
+        try {
+          const result = await postJsonEndpoint(endpoint, {});
+          addSystem(`已请求${label}整个 WebUI 服务。后台脚本会检查 5055、5056、自动续跑状态并重新拉起独立 App。`);
+          return result;
+        } catch (error) {
+          addSystem(`${label} WebUI 服务失败：${error.message || error}`, true);
+          throw error;
+        } finally {
+          if (button) setTimeout(() => { button.disabled = false; }, 2500);
         }
       }
       function setComposerSpeedMenuOpen(open) {
@@ -2404,8 +2480,7 @@ const CLIENT_BUILD = '20260706-account-parity';
         return threads.reduce((latest, thread) => Math.max(latest, Number(thread.last_used || thread.mtimeMs || 0)), 0);
       }
       function projectCategoryFor(project, threads = projectThreadsForWorkdir(project.workdir, project.entries)) {
-        if (sameProjectPath(project.workdir, currentProjectRootPath || currentWorkdir)) return { id: 'current', label: '当前项目', order: 0 };
-        return { id: 'other', label: '其他项目', order: 1 };
+        return { id: 'projects', label: '项目', order: 0 };
       }
       function categorizeProjects(projects) {
         const buckets = new Map();
@@ -2421,10 +2496,6 @@ const CLIENT_BUILD = '20260706-account-parity';
           .map((category) => ({
             ...category,
             items: category.items.sort((a, b) => {
-              if (sameProjectPath(a.workdir, currentWorkdir)) return -1;
-              if (sameProjectPath(b.workdir, currentWorkdir)) return 1;
-              if (sameProjectPath(a.workdir, currentProjectRootPath)) return -1;
-              if (sameProjectPath(b.workdir, currentProjectRootPath)) return 1;
               return b.latestMs - a.latestMs || projectDisplayName(a.workdir).localeCompare(projectDisplayName(b.workdir));
             })
           }));
@@ -2457,6 +2528,16 @@ const CLIENT_BUILD = '20260706-account-parity';
         if (expandedProjectThreadLists.has(key)) expandedProjectThreadLists.delete(key);
         else expandedProjectThreadLists.add(key);
         renderProjects();
+      }
+      function collapseOtherProjectThreads(workdir) {
+        const keepKey = normalizeSessionPath(workdir);
+        if (!keepKey) return;
+        const previousProjectCount = expandedProjectPaths.size;
+        const previousThreadCount = expandedProjectThreadLists.size;
+        expandedProjectPaths = new Set([...expandedProjectPaths].filter((item) => item === keepKey));
+        expandedProjectThreadLists = new Set([...expandedProjectThreadLists].filter((item) => item === keepKey));
+        if (expandedProjectPaths.size !== previousProjectCount) saveExpandedProjectPaths();
+        if (expandedProjectThreadLists.size !== previousThreadCount) exposeDebugState();
       }
       function ensureCurrentProjectExpanded() {
         const projectPath = currentProjectRootPath || currentWorkdir;
@@ -2529,6 +2610,7 @@ const CLIENT_BUILD = '20260706-account-parity';
         activeStreamSessionPath = null;
         currentWorkdir = workdir || currentWorkdir;
         currentProjectRootPath = workdir || currentProjectRootPath || currentWorkdir;
+        collapseOtherProjectThreads(currentProjectRootPath || currentWorkdir);
         codexRunning = false;
         queuedFollowUps = [];
         guidanceState = { pending: 0, saved: 0, count: 0, items: [] };
@@ -3224,7 +3306,6 @@ const CLIENT_BUILD = '20260706-account-parity';
           if (!response.ok) throw new Error(cfg.error || `HTTP ${response.status}`);
           currentConfig = cfg;
           if (!serviceTierOverrideActive) selectedServiceTier = normalizeServiceTier(cfg.service_tier);
-          modelPill.textContent = cfg.model || 'gpt-5.5';
           $('modelLabel').textContent = prettyModel(cfg.model);
           $('effortLabel').textContent = effortLabel(cfg.model_reasoning_effort);
           $('cfgModel').value = cfg.model || '';
@@ -3382,6 +3463,7 @@ const CLIENT_BUILD = '20260706-account-parity';
         currentResumePath = session.path;
         currentWorkdir = session.cwd || currentWorkdir;
         currentProjectRootPath = session.projectRoot || currentProjectRootPath || currentWorkdir;
+        collapseOtherProjectThreads(currentProjectRootPath || currentWorkdir);
         updateComposerContext();
         resumePill.textContent = '已恢复';
         threadTitle.textContent = sessionTitle(session);
@@ -5277,10 +5359,11 @@ const CLIENT_BUILD = '20260706-account-parity';
       $('newChatBtn').addEventListener('click', () => {
         startNewChat().catch((error) => addSystem(`新建会话失败：${error.message || error}`, true));
       });
-      $('cancelBtn').addEventListener('click', stopCurrentTurn);
       $('restartBtn').addEventListener('click', async () => {
-        await fetch('/restart', { method:'POST' });
-        addSystem('已请求重启当前会话。');
+        await requestWebUiServiceAction('restart');
+      });
+      $('recoverBtn').addEventListener('click', async () => {
+        await requestWebUiServiceAction('recover');
       });
       $('openSettingsBtn').addEventListener('click', async () => { await loadConfig(); openModal('settingsModal'); });
       $('modelSelectBtn').addEventListener('click', async () => { await loadConfig(); openModal('settingsModal'); });

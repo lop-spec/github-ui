@@ -43,8 +43,6 @@ function resolveBundledWindowsCodexExe(): string | null {
 export function resolveCodexLaunch(): CodexLaunch {
   if (process.env.CODEX_CMD) return { command: process.env.CODEX_CMD, argsPrefix: readArgsPrefixEnv() };
   if (process.platform === 'win32') {
-    const localCodexExe = path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'OpenAI', 'Codex', 'bin', 'codex.exe');
-    if (fs.existsSync(localCodexExe)) return { command: localCodexExe, argsPrefix: [] };
     const nativeCodex = resolveBundledWindowsCodexExe();
     if (nativeCodex) return { command: nativeCodex, argsPrefix: [] };
     const npmCodex = path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'node_modules', '@openai', 'codex', 'bin', 'codex.js');

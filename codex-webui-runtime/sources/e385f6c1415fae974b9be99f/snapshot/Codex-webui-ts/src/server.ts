@@ -61,7 +61,13 @@ const TOKEN = process.env.WEBUI_TOKEN || '';
 const PUBLIC_AUTH_USER = process.env.CODEX_WEBUI_PUBLIC_USER || 'lop';
 const PUBLIC_AUTH_PASSWORD = process.env.CODEX_WEBUI_PUBLIC_PASSWORD || '';
 const ALLOW_ORIGIN = process.env.ALLOW_ORIGIN || `http://localhost:${PORT}`;
-const UI_BUILD = '20260706-account-parity';
+const AUTO_RECOVER_INTERRUPTED_TURNS = (() => {
+  const raw = String(process.env.CODEX_WEBUI_AUTO_RECOVER || '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'off'].includes(raw)) return false;
+  return PORT === 5055;
+})();
+const UI_BUILD = '20260706-reply-layout-v1';
 const STATIC_ASSETS = ['index.html', 'css/app.css', 'js/app.js', 'js/transfer.js'];
 const UPLOAD_DIR = process.env.CODEX_WEBUI_UPLOADS ? path.resolve(process.env.CODEX_WEBUI_UPLOADS) : path.resolve(process.cwd(), 'uploads');
 const SESSIONS_ROOT = path.join(os.homedir(), '.codex', 'sessions');
@@ -2450,16 +2456,18 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, HOST, () => {
   codexCliUpdater = startCodexCliUpdater((payload) => broadcast('notification', payload));
-  setTimeout(() => {
-    codexService.recoverInterruptedTurnIfNeeded()
-      .then((result) => {
-        if (!result?.skipped) {
-          broadcast('system', { text: result?.ok === false ? `自动恢复检查未完成：${result.reason || 'unknown'}` : '自动恢复检查完成。' });
-          broadcastStatus();
-        }
-      })
-      .catch((error) => broadcast('stderr', { text: `自动恢复检查失败：${actionError(error)}` }));
-  }, 1500);
+  if (AUTO_RECOVER_INTERRUPTED_TURNS) {
+    setTimeout(() => {
+      codexService.recoverInterruptedTurnIfNeeded()
+        .then((result) => {
+          if (!result?.skipped) {
+            broadcast('system', { text: result?.ok === false ? `自动恢复检查未完成：${result.reason || 'unknown'}` : '自动恢复检查完成。' });
+            broadcastStatus();
+          }
+        })
+        .catch((error) => broadcast('stderr', { text: `自动恢复检查失败：${actionError(error)}` }));
+    }, 1500);
+  }
   const network = runtimeNetworkInfo();
   console.log(`Codex WebUI listening on ${HOST}:${PORT}`);
   console.log(`Codex WebUI local: ${network.localUrl}`);

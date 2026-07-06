@@ -900,11 +900,129 @@
         font-size: var(--font-size-base);
         line-height: var(--line-readable);
       }
+      .bubble.agent .message-text {
+        max-width: min(880px, 100%);
+        counter-reset: message-section;
+      }
       .message-text p {
         margin: 0 0 8px;
         white-space: normal;
       }
       .message-text p:last-child { margin-bottom: 0; }
+      .bubble.agent .message-text > p:first-child:not(:only-child) {
+        margin: 0 0 14px;
+        border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+        color: var(--text);
+        padding: 12px 14px;
+        line-height: 1.62;
+      }
+      .message-heading {
+        margin: 15px 0 8px;
+        color: var(--text);
+        font-size: 16px;
+        font-weight: 750;
+        line-height: 1.38;
+        letter-spacing: 0;
+        white-space: normal;
+      }
+      .bubble.agent .message-heading {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding-top: 13px;
+        border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+        counter-increment: message-section;
+      }
+      .bubble.agent .message-heading:first-child {
+        margin-top: 0;
+        padding-top: 0;
+        border-top: 0;
+      }
+      .bubble.agent .message-text > p:first-child + .message-heading {
+        margin-top: 12px;
+      }
+      .bubble.agent .message-heading::before {
+        content: counter(message-section);
+        width: 22px;
+        height: 22px;
+        flex: 0 0 22px;
+        display: inline-grid;
+        place-items: center;
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--accent) 14%, var(--surface-soft));
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 1;
+      }
+      .message-heading-level-1 {
+        font-size: 17px;
+      }
+      .message-list {
+        display: grid;
+        gap: 8px;
+        margin: 8px 0 12px;
+        padding: 0;
+        color: var(--text-soft);
+        list-style: none;
+        white-space: normal;
+      }
+      .message-list > li {
+        min-width: 0;
+        position: relative;
+        padding-left: 18px;
+      }
+      .message-list-unordered > li::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: .76em;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      .message-list-ordered {
+        counter-reset: message-list;
+      }
+      .message-list-ordered > li {
+        counter-increment: message-list;
+        padding-left: 30px;
+      }
+      .message-list-ordered > li::before {
+        content: counter(message-list);
+        position: absolute;
+        left: 0;
+        top: .14em;
+        width: 20px;
+        height: 20px;
+        display: inline-grid;
+        place-items: center;
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--accent) 12%, var(--surface-soft));
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 760;
+      }
+      .message-callout {
+        margin: 10px 0 12px;
+        border-left: 3px solid var(--accent);
+        background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+        padding: 10px 12px;
+        color: var(--text-soft);
+        white-space: normal;
+      }
+      .message-callout p {
+        margin: 0;
+      }
+      .message-divider {
+        height: 1px;
+        margin: 14px 0;
+        border: 0;
+        background: color-mix(in srgb, var(--border) 72%, transparent);
+      }
       .message-footer {
         display: flex;
         align-items: center;
