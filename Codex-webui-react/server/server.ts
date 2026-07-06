@@ -315,6 +315,27 @@ function resolveOpenTarget(value: unknown): OpenTarget | null {
   return null;
 }
 
+function normalizeProjectFolderName(value: unknown): string {
+  const name = String(value || '').trim();
+  if (!name) throw new Error('Project folder name is required');
+  if (name === '.' || name === '..' || /[<>:"/\\|?*\x00-\x1f]/.test(name)) throw new Error('Invalid project folder name');
+  if (/[. ]$/.test(name)) throw new Error('Invalid project folder name');
+  const reserved = new Set([
+    'CON', 'PRN', 'AUX', 'NUL',
+    ...Array.from({ length: 9 }, (_, i) => `COM${i + 1}`),
+    ...Array.from({ length: 9 }, (_, i) => `LPT${i + 1}`)
+  ]);
+  if (reserved.has(name.split('.')[0].toUpperCase())) throw new Error('Invalid project folder name');
+  return name;
+}
+
+function childProjectPath(parentPath: string, name: string): string {
+  const target = path.resolve(parentPath, name);
+  const relative = path.relative(path.resolve(parentPath), target);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Invalid project folder name');
+  return target;
+}
+
 function stripWindowsNamespacePrefix(value: string): string {
   if (process.platform !== 'win32') return value;
   if (value.startsWith('\\\\?\\UNC\\')) return `\\\\${value.slice(8)}`;
@@ -663,6 +684,39 @@ function isWithinProjectRoot(workdir: string, rootPath: string): boolean {
   return relative === '' || Boolean(relative && !relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
+function rebasePathInsideRoot(value: string, oldRoot: string, newRoot: string): string {
+  const relative = path.relative(path.resolve(oldRoot), path.resolve(value));
+  return relative ? path.resolve(newRoot, relative) : path.resolve(newRoot);
+}
+
+function rewriteProjectRootPath(history: History, oldPath: string, newPath: string): ProjectRoot {
+  const oldRoot = path.resolve(oldPath);
+  const nextRoot = path.resolve(newPath);
+  const oldId = projectRootId(oldRoot);
+  const nextId = projectRootId(nextRoot);
+  const now = Date.now();
+  let touchedRoot = false;
+  history.roots = (history.roots || [])
+    .filter((root) => root && typeof root.path === 'string')
+    .map((root) => {
+      const rootPath = path.resolve(root.path);
+      if (projectRootId(rootPath) !== oldId) return root;
+      touchedRoot = true;
+      return { id: nextId, name: basenameForDirectory(nextRoot), path: nextRoot, last_used: now };
+    })
+    .filter((root, index, roots) => roots.findIndex((candidate) => projectRootId(candidate.path) === projectRootId(root.path)) === index);
+  if (!touchedRoot) {
+    history.roots = [{ id: nextId, name: basenameForDirectory(nextRoot), path: nextRoot, last_used: now }, ...(history.roots || [])];
+  }
+  history.entries = (history.entries || []).map((entry) => {
+    if (!entry || typeof entry.workdir !== 'string' || !isWithinProjectRoot(entry.workdir, oldRoot)) return entry;
+    return { ...entry, workdir: rebasePathInsideRoot(entry.workdir, oldRoot, nextRoot) };
+  });
+  if (!history.selectedRootId || history.selectedRootId === oldId) history.selectedRootId = nextId;
+  return (history.roots || []).find((root) => projectRootId(root.path) === nextId)
+    || { id: nextId, name: basenameForDirectory(nextRoot), path: nextRoot, last_used: now };
+}
+
 function projectRootForWorkdir(workdir: string | null | undefined, roots: ProjectRoot[]): string {
   const resolved = workdir ? path.resolve(workdir) : path.resolve(codexService.getWorkdir());
   const matches = roots
@@ -771,6 +825,12 @@ function windowsPowerShellCommand(): string {
   return fs.existsSync(powershell) ? powershell : 'powershell.exe';
 }
 
+function windowsExplorerCommand(): string {
+  const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+  const explorer = path.join(systemRoot, 'explorer.exe');
+  return fs.existsSync(explorer) ? explorer : 'explorer.exe';
+}
+
 function pickProjectDirectory(): Promise<string | null> {
   const override = resolveProjectPath(process.env.CODEX_WEBUI_PICK_DIRECTORY);
   if (override) return Promise.resolve(override);
@@ -806,22 +866,14 @@ function pickProjectDirectory(): Promise<string | null> {
   });
 }
 
-const WINDOWS_BACKGROUND_OPEN_SCRIPT = [
-  '$ErrorActionPreference = "Stop"',
-  '$target = [Environment]::GetEnvironmentVariable("CODEX_WEBUI_OPEN_TARGET")',
-  'if ([string]::IsNullOrWhiteSpace($target)) { exit 1 }',
-  '$shell = New-Object -ComObject Shell.Application',
-  '$shell.ShellExecute($target, "", "", "open", 4) # SW_SHOWNOACTIVATE'
-].join('\n');
-
 function openLocalPath(targetPath: string, kind: OpenTarget['kind'] = 'directory'): Promise<void> {
   const override = process.env.CODEX_WEBUI_OPEN_COMMAND;
   const windowsOpen = !override && process.platform === 'win32';
-  const command = override || (windowsOpen ? windowsPowerShellCommand() : process.platform === 'darwin' ? 'open' : 'xdg-open');
+  const command = override || (windowsOpen ? windowsExplorerCommand() : process.platform === 'darwin' ? 'open' : 'xdg-open');
   const args = override
     ? [...readJsonArrayEnv('CODEX_WEBUI_OPEN_ARGS_PREFIX_JSON'), targetPath]
     : windowsOpen
-      ? ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-Command', WINDOWS_BACKGROUND_OPEN_SCRIPT]
+      ? (kind === 'file' ? ['/select,', targetPath] : [targetPath])
       : [...readJsonArrayEnv('CODEX_WEBUI_OPEN_ARGS_PREFIX_JSON'), targetPath];
   return new Promise((resolveOpen, reject) => {
     const child = spawn(command, args, {
