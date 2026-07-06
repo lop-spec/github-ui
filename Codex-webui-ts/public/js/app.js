@@ -2697,8 +2697,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
         row.className = `bubble ${error ? 'error' : 'system'}`;
         row.dataset.status = 'done';
         row.innerHTML = `<div class="bubble-card">${messageHeader(error ? 'error' : 'system')}<div class="message-text mono">${escapeHtml(textValue)}</div></div>`;
-        if (options.beforeNode) log.insertBefore(row, options.beforeNode);
-        else log.appendChild(row);
+        log.appendChild(row);
         scrollToBottom();
       }
       window.addEventListener('error', (event) => {
@@ -2777,7 +2776,8 @@ const CLIENT_BUILD = '20260706-manual-projects';
         const title = item.kind === 'commandExecution' ? timelineKindLabel(item.kind) : item.title || timelineKindLabel(item.kind);
         const head = `<span>${escapeHtml(title)}</span><span class="timeline-kind">${escapeHtml(timelineKindLabel(item.kind))}</span>${status}`;
         row.innerHTML = timelineDetailMarkup(item, detail, head);
-        log.appendChild(row);
+        if (options.beforeNode) log.insertBefore(row, options.beforeNode);
+        else log.appendChild(row);
         if (options.scroll !== false) {
           scrollToBottom();
           updateTokenStats();
