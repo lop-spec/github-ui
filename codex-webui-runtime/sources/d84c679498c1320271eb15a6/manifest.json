@@ -11,7 +11,7 @@
     "workspacePath": "C:\\Users\\lop\\Documents\\Codex\\github-ui",
     "scope": "source-rules-skills"
   },
-  "generatedAt": "2026-07-06T16:26:20.308Z",
+  "generatedAt": "2026-07-06T16:29:44.109Z",
   "fullSnapshot": true,
   "mergePolicy": {
     "webui-source": "remote-newer-wins-then-verify",
@@ -20,12 +20,24 @@
     "local-machine": "do-not-cross-machine-apply-use-examples",
     "artifacts": "never-upload-never-apply"
   },
-  "fileCount": 127,
+  "fileCount": 131,
   "files": [
+    {
+      "path": ".gitignore",
+      "sha": "13e49370b7c8b2fdbe89df9ac48b000415a950fb",
+      "size": 257,
+      "category": "source"
+    },
     {
       "path": "Codex-webui-react/AGENTS.md",
       "sha": "36e6ebfeeaa0cada06842de7e56d4177deb8ed1f",
       "size": 1293,
+      "category": "webui-source"
+    },
+    {
+      "path": "Codex-webui-react/components.json",
+      "sha": "0e6b202523a8c62d5fad47133af6d2f016ed5eda",
+      "size": 413,
       "category": "webui-source"
     },
     {
@@ -299,6 +311,12 @@
       "category": "webui-source"
     },
     {
+      "path": "Codex-webui-ts/INSTALL_WEBUI_APP.cmd",
+      "sha": "408899aedb232539b514862f5fb690da550a008a",
+      "size": 92,
+      "category": "webui-source"
+    },
+    {
       "path": "Codex-webui-ts/package.json",
       "sha": "2621b747254b43992c10047a18c46e9083e0fc70",
       "size": 1218,
@@ -527,6 +545,12 @@
       "category": "webui-source"
     },
     {
+      "path": "Codex-webui-ts/START_WEBUI_APP.cmd",
+      "sha": "69c278645c15662b819bbadf69cad6a2a1acdc75",
+      "size": 72,
+      "category": "webui-source"
+    },
+    {
       "path": "Codex-webui-ts/tsconfig.json",
       "sha": "07b483cb319dfbc1b3d2bd69cb1e8f827dfd186d",
       "size": 316,
@@ -732,8 +756,8 @@
     },
     {
       "path": "github-sync.config.example.json",
-      "sha": "eff08e37e9c66e816abb04c305068008d1b02e95",
-      "size": 5323,
+      "sha": "e6faa7834c2e36152ec9e3b50f2a21720e89b29b",
+      "size": 5468,
       "category": "config-example"
     },
     {
@@ -762,8 +786,8 @@
     },
     {
       "path": "scripts/github-sync.mjs",
-      "sha": "ddd3e8e651caa667711d00155ff2582030595482",
-      "size": 41689,
+      "sha": "3fac2bd48c49289e3f2e3d3681f9f805f2c60899",
+      "size": 41935,
       "category": "runtime-script"
     },
     {

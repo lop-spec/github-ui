@@ -23,6 +23,7 @@ export const DEFAULT_CONFIG = {
   maxFileBytes: 2 * 1024 * 1024,
   maxChangesPerCommit: 800,
   include: [
+    '.gitignore',
     'AGENTS.md',
     'github-pull.config.json',
     'github-sync.config.example.json',
@@ -40,13 +41,16 @@ export const DEFAULT_CONFIG = {
     'parity/**',
     'scripts/**',
     'Codex-webui-ts/AGENTS.md',
+    'Codex-webui-ts/INSTALL_WEBUI_APP.cmd',
     'Codex-webui-ts/RULES.md',
+    'Codex-webui-ts/START_WEBUI_APP.cmd',
     'Codex-webui-ts/package.json',
     'Codex-webui-ts/scripts/**',
     'Codex-webui-ts/tsconfig*.json',
     'Codex-webui-ts/src/**',
     'Codex-webui-ts/public/**',
     'Codex-webui-react/AGENTS.md',
+    'Codex-webui-react/components.json',
     'Codex-webui-react/RULES.md',
     'Codex-webui-react/package.json',
     'Codex-webui-react/scripts/**',
@@ -397,6 +401,7 @@ function syncPathCategory(relPath) {
   const normalized = toPosixPath(relPath);
   if (/^Codex-webui-(ts|react)\//.test(normalized)) return 'webui-source';
   if (/^(AGENTS\.md|RULES\.md|codex\/(AGENTS\.md|agents\/|prompts\/|rules\/|skills\/|workspace\/))/.test(normalized)) return 'rules';
+  if (/^Codex-webui-ts\/(START|INSTALL)_WEBUI_APP\.cmd$/i.test(normalized)) return 'runtime-script';
   if (/(^|\/)scripts\/.*\.(mjs|js|cmd|ps1|sh)$/i.test(normalized)) return 'runtime-script';
   if (/config|example/i.test(normalized)) return 'config-example';
   return 'source';
