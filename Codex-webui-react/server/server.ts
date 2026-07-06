@@ -997,7 +997,6 @@ function broadcastStatus() {
     running: codexService.isRunning(),
     workdir: codexService.getWorkdir(),
     queue: codexService.getQueue(),
-    guidance: codexService.getGuidance(),
     pendingUserInput: codexService.getLatestPendingUserInput()
   });
 }
@@ -1351,7 +1350,7 @@ const server = http.createServer((req, res) => {
     // Initial status
     const lastPath = codexService.getDisplayResumePath();
     try {
-      const init = `event: status\n` + `data: ${JSON.stringify({ resumed: !!lastPath, resume_path: lastPath, resume_meta: getResumeMeta(), memory: readMemoryFacts(), config: getConfigSafe(), running: codexService.isRunning(), workdir: codexService.getWorkdir(), queue: codexService.getQueue(), guidance: codexService.getGuidance(), pendingUserInput: codexService.getLatestPendingUserInput() })}\n\n`;
+      const init = `event: status\n` + `data: ${JSON.stringify({ resumed: !!lastPath, resume_path: lastPath, resume_meta: getResumeMeta(), memory: readMemoryFacts(), config: getConfigSafe(), running: codexService.isRunning(), workdir: codexService.getWorkdir(), queue: codexService.getQueue(), pendingUserInput: codexService.getLatestPendingUserInput() })}\n\n`;
       res.write(init);
     } catch {}
     
@@ -1742,8 +1741,8 @@ const server = http.createServer((req, res) => {
         const selectedServiceTier = String(serviceTier || '').trim().toLowerCase() === 'fast' ? 'fast' : null;
         const sent = await codexService.sendUserInput(text.trim(), imageAttachments.map((item) => item.path), imageAttachments, preset, selectedServiceTier);
         setCORS(res);
-        res.writeHead(sent.status === 'queued' || sent.status === 'guidance_pending' ? 202 : 200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ...sent, running: codexService.isRunning(), resume_path: codexService.getDisplayResumePath(), workdir: codexService.getWorkdir(), queue: codexService.getQueue(), guidance: codexService.getGuidance() }));
+        res.writeHead(sent.status === 'queued' ? 202 : 200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ...sent, running: codexService.isRunning(), resume_path: codexService.getDisplayResumePath(), workdir: codexService.getWorkdir(), queue: codexService.getQueue() }));
       } catch (e) {
         setCORS(res); res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }));
       }
@@ -1782,7 +1781,7 @@ const server = http.createServer((req, res) => {
         const sent = await codexService.regenerateFromEditedUserMessage(resumePath, turnId, text, imageAttachments.map((item) => item.path), imageAttachments, preset, selectedServiceTier);
         setCORS(res);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ...sent, running: codexService.isRunning(), resume_path: codexService.getDisplayResumePath(), workdir: codexService.getWorkdir(), queue: codexService.getQueue(), guidance: codexService.getGuidance() }));
+        res.end(JSON.stringify({ ...sent, running: codexService.isRunning(), resume_path: codexService.getDisplayResumePath(), workdir: codexService.getWorkdir(), queue: codexService.getQueue() }));
       } catch (e) {
         setCORS(res); res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }));
       }
@@ -1825,7 +1824,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && url === '/queue') {
     setCORS(res);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ running: codexService.isRunning(), workdir: codexService.getWorkdir(), queue: codexService.getQueue(), guidance: codexService.getGuidance() }));
+    return res.end(JSON.stringify({ running: codexService.isRunning(), workdir: codexService.getWorkdir(), queue: codexService.getQueue() }));
   }
 
   if (req.method === 'GET' && url === '/server-requests') {
@@ -1849,7 +1848,6 @@ const server = http.createServer((req, res) => {
           running: codexService.isRunning(),
           workdir: codexService.getWorkdir(),
           queue: codexService.getQueue(),
-          guidance: codexService.getGuidance(),
           pendingUserInput: codexService.getLatestPendingUserInput()
         });
       })
@@ -1870,7 +1868,7 @@ const server = http.createServer((req, res) => {
         if (url === '/queue/clear') codexService.clearQueuedInputs();
         setCORS(res);
         res.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok, running: codexService.isRunning(), workdir: codexService.getWorkdir(), queue: codexService.getQueue(), guidance: codexService.getGuidance() }));
+        res.end(JSON.stringify({ ok, running: codexService.isRunning(), workdir: codexService.getWorkdir(), queue: codexService.getQueue() }));
       } catch {
         setCORS(res); res.writeHead(400); res.end('Bad JSON');
       }
