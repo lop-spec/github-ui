@@ -68,6 +68,10 @@ const SESSIONS_ROOT = path.join(os.homedir(), '.codex', 'sessions');
 const SESSION_RECYCLE_ROOT = process.env.CODEX_WEBUI_SESSION_RECYCLE_ROOT
   ? path.resolve(process.env.CODEX_WEBUI_SESSION_RECYCLE_ROOT)
   : path.join(os.homedir(), 'Documents', 'Codex', 'Codex_RECYCLE');
+const HISTORY_PROJECT_NAME = '历史对话';
+const HISTORY_PROJECT_ROOT = process.env.CODEX_WEBUI_HISTORY_PROJECT_DIR
+  ? path.resolve(process.env.CODEX_WEBUI_HISTORY_PROJECT_DIR)
+  : path.join(os.homedir(), 'Documents', 'Codex', HISTORY_PROJECT_NAME);
 
 const sseClients = new Set<ServerResponse>();
 let codexCliUpdater: CodexCliUpdater | null = null;
@@ -395,6 +399,20 @@ function uniquePath(candidate: string): string {
   throw new Error('Too many recycle path collisions');
 }
 
+function moveFileAcrossVolumes(source: string, target: string): void {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  try {
+    fs.renameSync(source, target);
+  } catch (error: any) {
+    if (error && error.code === 'EXDEV') {
+      fs.copyFileSync(source, target);
+      fs.unlinkSync(source);
+    } else {
+      throw error;
+    }
+  }
+}
+
 function recycleSessionFile(sessionPath: string): { recycled: boolean; recycledPath: string | null; bucket: string } {
   const abs = path.resolve(sessionPath);
   const bucket = sessionDateBucket(abs);
@@ -405,18 +423,147 @@ function recycleSessionFile(sessionPath: string): { recycled: boolean; recycledP
   }
   const target = uniquePath(path.join(SESSION_RECYCLE_ROOT, bucket, 'sessions', relative));
   assertWithinDirectory(target, SESSION_RECYCLE_ROOT);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  try {
-    fs.renameSync(abs, target);
-  } catch (error: any) {
-    if (error && error.code === 'EXDEV') {
-      fs.copyFileSync(abs, target);
-      fs.unlinkSync(abs);
-    } else {
-      throw error;
+  moveFileAcrossVolumes(abs, target);
+  return { recycled: true, recycledPath: target, bucket };
+}
+
+type RecycledSessionPathInfo = {
+  recycledPath: string;
+  targetBasePath: string;
+  relativeSessionPath: string;
+  bucket: string;
+};
+
+function recycledSessionPathInfo(value: string): RecycledSessionPathInfo | null {
+  const recycledPath = path.resolve(value);
+  if (!/^rollout-.*\.jsonl$/.test(path.basename(recycledPath))) return null;
+  const relativeToRecycle = path.relative(SESSION_RECYCLE_ROOT, recycledPath);
+  if (!relativeToRecycle || relativeToRecycle.startsWith('..') || path.isAbsolute(relativeToRecycle)) return null;
+  const parts = relativeToRecycle.split(/[\\/]+/);
+  const [bucket, sessionsPart] = parts;
+  if (!/^\d{8}$/.test(bucket || '') || sessionsPart !== 'sessions' || parts.length < 5) return null;
+  const relativeSessionPath = parts.slice(2).join(path.sep);
+  const targetBasePath = path.join(SESSIONS_ROOT, relativeSessionPath);
+  assertWithinDirectory(targetBasePath, SESSIONS_ROOT);
+  return { recycledPath, targetBasePath, relativeSessionPath, bucket };
+}
+
+function rolloutTimestampMs(filePath: string): number | null {
+  const match = path.basename(filePath).match(/^rollout-(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})-/);
+  if (!match) return null;
+  const [, y, mo, d, h, mi, s] = match;
+  const time = new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function trimTextForList(value: string, max = 140): string {
+  const normalized = String(value || '')
+    .replace(/```[\s\S]*?```/g, ' 代码块 ')
+    .replace(/<memory\b[^>]*>[\s\S]*?(?:<\/memory>|$)/gi, '')
+    .replace(/<oai-mem-citation\b[^>]*>[\s\S]*?(?:<\/oai-mem-citation>|$)/gi, '')
+    .replace(/^[-*#>\s]+/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (normalized.length <= max) return normalized;
+  return `${normalized.slice(0, Math.max(0, max - 3)).trim()}...`;
+}
+
+function compactLatestConclusion(text: string): string {
+  const cleaned = String(text || '').replace(/```[\s\S]*?```/g, ' 代码块 ');
+  const blocks = cleaned
+    .split(/\n{2,}|\r?\n/)
+    .map((line) => trimTextForList(line, 160))
+    .filter(Boolean);
+  const conclusion = blocks.find((line) => /^(最终)?(结论|总结|当前结果|解决方案|根因)[:：]/.test(line))
+    || blocks.find((line) => /结论|当前结果|解决方案/.test(line))
+    || blocks[0]
+    || '未提取到最新回复';
+  return trimTextForList(conclusion, 140);
+}
+
+function recycledSessionCandidate(info: RecycledSessionPathInfo, stat: fs.Stats) {
+  const messages = parseSessionMessages(info.recycledPath);
+  const latestAssistant = [...messages].reverse().find((message) => message.role === 'assistant' && message.text);
+  const latestUser = [...messages].reverse().find((message) => message.role === 'user' && message.text);
+  const sessionTime = rolloutTimestampMs(info.recycledPath) || stat.mtimeMs;
+  return {
+    recycledPath: info.recycledPath,
+    targetPath: uniquePath(info.targetBasePath),
+    relativeSessionPath: info.relativeSessionPath,
+    bucket: info.bucket,
+    name: path.basename(info.recycledPath),
+    title: trimTextForList(latestUser?.text || path.basename(info.recycledPath), 80),
+    summary: compactLatestConclusion(latestAssistant?.text || ''),
+    latestReply: trimTextForList(latestAssistant?.text || '', 500),
+    messageCount: messages.length,
+    sessionTime,
+    mtimeMs: stat.mtimeMs,
+    size: stat.size
+  };
+}
+
+function listRecycledSessionCandidates(days = 1, limit = 80) {
+  const boundedDays = Math.max(1, Math.min(30, Number(days) || 1));
+  const boundedLimit = Math.max(1, Math.min(200, Number(limit) || 80));
+  const cutoff = Date.now() - boundedDays * 24 * 60 * 60 * 1000;
+  const out: ReturnType<typeof recycledSessionCandidate>[] = [];
+  let buckets: fs.Dirent[] = [];
+  try { buckets = fs.readdirSync(SESSION_RECYCLE_ROOT, { withFileTypes: true }); } catch { return out; }
+  for (const bucket of buckets) {
+    if (!bucket.isDirectory() || !/^\d{8}$/.test(bucket.name)) continue;
+    const sessionsDir = path.join(SESSION_RECYCLE_ROOT, bucket.name, 'sessions');
+    const stack = [sessionsDir];
+    while (stack.length) {
+      const dir = stack.pop();
+      if (!dir) continue;
+      let entries: fs.Dirent[] = [];
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(full);
+          continue;
+        }
+        const info = recycledSessionPathInfo(full);
+        if (!info) continue;
+        let stat: fs.Stats;
+        try { stat = fs.statSync(full); } catch { continue; }
+        const sessionTime = rolloutTimestampMs(full) || stat.mtimeMs;
+        if (sessionTime < cutoff) continue;
+        out.push(recycledSessionCandidate(info, stat));
+      }
     }
   }
-  return { recycled: true, recycledPath: target, bucket };
+  out.sort((a, b) => (b.sessionTime || b.mtimeMs || 0) - (a.sessionTime || a.mtimeMs || 0));
+  return out.slice(0, boundedLimit);
+}
+
+function ensureHistoryProject(history: History): ProjectRoot {
+  fs.mkdirSync(HISTORY_PROJECT_ROOT, { recursive: true });
+  const root = upsertProjectRoot(history, HISTORY_PROJECT_ROOT);
+  root.name = HISTORY_PROJECT_NAME;
+  root.path = path.resolve(HISTORY_PROJECT_ROOT);
+  return root;
+}
+
+function restoreRecycledSession(recycledPath: string) {
+  const info = recycledSessionPathInfo(recycledPath);
+  if (!info || !fs.existsSync(info.recycledPath)) throw new Error('Invalid recycled session path');
+  const targetPath = uniquePath(info.targetBasePath);
+  assertWithinDirectory(targetPath, SESSIONS_ROOT);
+  moveFileAcrossVolumes(info.recycledPath, targetPath);
+  const h = readHistory();
+  const root = ensureHistoryProject(h);
+  upsertSessionWorkdir(h, targetPath, root.path);
+  removeArchivedSessionPath(h, targetPath);
+  writeHistory(h);
+  const stat = fs.statSync(targetPath);
+  const session = scanSessions().find((item) => pathIdentity(item.path) === pathIdentity(targetPath))
+    || { path: targetPath, name: path.basename(targetPath), mtimeMs: stat.mtimeMs, size: stat.size, title: path.basename(targetPath), cwd: root.path, messageCount: 0 };
+  return {
+    session: { ...session, cwd: root.path, projectRoot: root.path },
+    historyProject: root
+  };
 }
 
 function projectRootId(value: string): string {
