@@ -3350,9 +3350,10 @@ const CLIENT_BUILD = '20260706-project-actions';
           }
           byKey.set(key, { workdir: value, label: label || projectDisplayName(value), count });
         };
-        projectsCache.forEach((project) => add(project.workdir, projectDisplayName(project.workdir), projectThreadsForWorkdir(project.workdir, project.entries).length));
-        projectRootsCache.forEach((root) => add(root.path, root.name || projectDisplayName(root.path), 0));
-        add(currentProjectRootPath || currentWorkdir, projectDisplayName(currentProjectRootPath || currentWorkdir), 0);
+        sidebarVisibleProjects().forEach((project) => {
+          const threads = project.threads || projectThreadsForWorkdir(project.workdir, project.entries);
+          add(project.workdir, projectDisplayName(project.workdir), threads.length);
+        });
         const currentKey = normalizeSessionPath(session.projectRoot || session.cwd || '');
         return [...byKey.values()]
           .map((option) => ({ ...option, current: normalizeSessionPath(option.workdir) === currentKey }))
