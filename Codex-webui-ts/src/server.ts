@@ -28,7 +28,7 @@ import { deleteMcpServer, listMcpServers, saveMcpServer, toggleMcpServer, writeS
 import { getQuickPreview } from './services/preview.js';
 import { deleteSkill, listSkills, setSkillEnabled } from './services/skills.js';
 import { killTerminalSession, listTerminalSessions, resizeTerminalSession, spawnTerminalSession, writeTerminalStdin } from './services/terminal.js';
-import { scanSessions, parseSessionMessages, isWithinSessions, readHistory, writeHistory } from './utils/fs-helpers.js';
+import { scanSessions, parseSessionMessages, parseSessionMessagesPage, isWithinSessions, readHistory, writeHistory } from './utils/fs-helpers.js';
 import type { History, HistoryEntry, ProjectRoot, SessionEntry } from './types.js';
 import {
   cleanupExpiredTransfers,
@@ -2059,10 +2059,13 @@ const server = http.createServer((req, res) => {
       }
       sessionPath = abs;
     }
-    const messages = parseSessionMessages(sessionPath);
+    const page = parseSessionMessagesPage(sessionPath, {
+      limit: Number(parsedUrl.searchParams.get('limit') || 0),
+      before: parsedUrl.searchParams.has('before') ? Number(parsedUrl.searchParams.get('before')) : null
+    });
     setCORS(res);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ messages, current: sessionPath }));
+    return res.end(JSON.stringify({ ...page, current: sessionPath }));
   }
 
   if (req.method === 'POST' && url === '/resume') {
