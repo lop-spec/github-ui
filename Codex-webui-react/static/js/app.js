@@ -1,7 +1,8 @@
-const CLIENT_BUILD = '20260706-manual-projects';
+const CLIENT_BUILD = '20260706-project-window';
       document.documentElement.dataset.webuiBuild = CLIENT_BUILD;
       const DEBUG_NO_EVENTS = new URLSearchParams(location.search).has('debug_no_events');
       const SIDEBAR_VISIBLE_LIMIT = 10;
+      const PROJECT_THREAD_RECENT_WINDOW_MS = 30 * 60 * 1000;
       const COMPOSER_DRAFT_KEY = 'plusComposerDraft';
 
       const $ = (id) => document.getElementById(id);
@@ -96,6 +97,8 @@ const CLIENT_BUILD = '20260706-manual-projects';
       const accountLogoutBtn = $('accountLogoutBtn');
       const composerMoreMenu = $('composerMoreMenu');
       const composerAddAttachment = $('composerAddAttachment');
+      const composerAddFolder = $('composerAddFolder');
+      const composerDropSurface = document.querySelector('[data-plus-composer]');
       const composerPlanMenuBtn = $('composerPlanMenuBtn');
       const composerPlanValue = $('composerPlanValue');
       const composerSpeedValue = $('composerSpeedValue');
@@ -344,6 +347,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
           currentWorkdir,
           codexRunning,
           queuedFollowUps: queuedFollowUps.length,
+          guidanceState,
           composerSurface: Boolean(document.querySelector('[data-plus-composer]')),
           composerContext: composerContextLabel ? composerContextLabel.textContent : '',
           composerRunState: composerRunState ? composerRunState.textContent : '',
@@ -428,7 +432,9 @@ const CLIENT_BUILD = '20260706-manual-projects';
       let pinnedPaths = readPinnedPaths();
       let eventStreamStarted = false;
       let composerAttachments = [];
+      let composerDragDepth = 0;
       let queuedFollowUps = [];
+      let guidanceState = { pending: 0, saved: 0, count: 0, items: [] };
       let queuePanelCollapsed = false;
       let codexRunning = false;
       let windowFocused = !document.hidden && document.hasFocus();
@@ -499,6 +505,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
         { id:'review', description:'对当前改动发起 Review。', flavor:'official', action:'startReview', meta:'Official', requiresThread:true, supportsInlineArgs:true },
         { id:'status', description:'查看当前会话配置与 token 使用情况。', flavor:'official', action:'showStatus', meta:'Local', availableDuringTask:true },
         { id:'debug-config', description:'查看配置层与来源。', flavor:'official', action:'showDebugConfig', meta:'Local', availableDuringTask:true },
+        { id:'diff', description:'显示当前工作区 diff。', flavor:'official', action:'showDiff', meta:'Local', requiresWorkspace:true, availableDuringTask:true },
         { id:'goal', description:'设置或查看长任务目标。', flavor:'official', action:'threadGoal', meta:'Official', requiresThread:true, supportsInlineArgs:true, availableDuringTask:true },
         { id:'compact', description:'压缩当前线程上下文。', flavor:'official', action:'compactThread', meta:'Official', requiresThread:true, availableDuringTask:false },
         { id:'fork', description:'从当前线程创建分支线程。', flavor:'official', action:'forkThread', meta:'Official', requiresThread:true, availableDuringTask:false },
@@ -976,7 +983,8 @@ const CLIENT_BUILD = '20260706-manual-projects';
           `工作区：${currentWorkdir || '未选择'}`,
           `线程：${currentResumePath || '新会话'}`,
           `运行中：${codexRunning ? '是' : '否'}`,
-          `排队：${queuedFollowUps.length} 条`
+          `排队：${queuedFollowUps.length} 条`,
+          `引导：${guidanceState.count || 0} 条`
         ].join('\n');
       }
       async function showStatusDetail() {
@@ -1326,7 +1334,8 @@ const CLIENT_BUILD = '20260706-manual-projects';
         renderGitPanel();
       }
       async function openGitPanel() {
-        setGitStatusLine('React parity shell hides the Git panel entry.', true);
+        openModal('gitModal');
+        await loadGitPanel(gitPanelState.scope);
       }
       async function runGitPathAction(endpoint, extra = {}) {
         const paths = gitSelectionPaths();
@@ -1417,7 +1426,14 @@ const CLIENT_BUILD = '20260706-manual-projects';
         renderTerminalPanel();
       }
       async function openTerminalPanel() {
-        setTerminalStatus('React parity shell hides the terminal panel entry.', true);
+        openModal('terminalModal');
+        await loadTerminalSessions();
+        if (!terminalState.pollTimer) {
+          terminalState.pollTimer = setInterval(() => {
+            if (!$('terminalModal')?.classList.contains('open')) return;
+            loadTerminalSessions().catch(() => {});
+          }, 1500);
+        }
       }
       async function spawnTerminal() {
         const command = String(terminalCommandInput?.value || '').trim();
@@ -1506,6 +1522,18 @@ const CLIENT_BUILD = '20260706-manual-projects';
         if (data?.kind === 'website' && data.url) {
           window.open(data.url, '_blank', 'noopener');
         }
+      }
+      async function showGitDiff() {
+        await openGitPanel();
+        const data = await fetchJsonEndpoint('/git/diff');
+        if (!data.isRepo) {
+          addSystem(`Git：当前工作区不是 Git 仓库。\n${data.workdir || currentWorkdir}\n${data.error || ''}`.trim(), true);
+          return;
+        }
+        const files = (data.files || []).slice(0, 40).map((file) => [file.status, file.path]);
+        const table = files.length ? markdownTable(['状态', '文件'], files) : '当前没有未提交文件。';
+        const diff = data.diff ? `\n\n\`\`\`diff\n${data.diff}\n\`\`\`` : '';
+        addBubble(`Git 状态\n\n分支：${data.branch || '(detached)'}\n仓库：${data.root}\n\n${table}${diff}`, 'agent');
       }
       function setSkillsActionError(message = '') {
         if (!skillsActionError) return;
@@ -2080,6 +2108,10 @@ const CLIENT_BUILD = '20260706-manual-projects';
           addBubble('```json\n' + JSON.stringify(currentConfig, null, 2) + '\n```', 'agent');
           return;
         }
+        if (item.action === 'showDiff') {
+          await showGitDiff();
+          return;
+        }
         if (item.action === 'initAgents') {
           await initAgents();
           return;
@@ -2311,6 +2343,17 @@ const CLIENT_BUILD = '20260706-manual-projects';
             })
           }));
       }
+      function sidebarVisibleProjects() {
+        const q = (sideFilter.value || '').toLowerCase();
+        const searchActive = Boolean(q);
+        const visible = [];
+        const list = projectsCache.filter((project) => !projectRootHidden(project) && projectMatchesQuery(project, q));
+        categorizeProjects(list).forEach((category) => {
+          const categoryExpanded = searchActive || expandedProjectCategories.has(category.id);
+          visible.push(...(categoryExpanded ? category.items : category.items.slice(0, SIDEBAR_VISIBLE_LIMIT)));
+        });
+        return visible;
+      }
       function toggleProjectExpanded(workdir) {
         const key = normalizeSessionPath(workdir);
         if (expandedProjectPaths.has(key)) expandedProjectPaths.delete(key);
@@ -2402,6 +2445,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
         currentProjectRootPath = workdir || currentProjectRootPath || currentWorkdir;
         codexRunning = false;
         queuedFollowUps = [];
+        guidanceState = { pending: 0, saved: 0, count: 0, items: [] };
         streamEl = null;
         turnQuestionText.clear();
         latestUserQuestionText = '';
@@ -2651,6 +2695,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
           codexRunning = typeof data.running === 'boolean' ? data.running : true;
           if (data.status === 'started' || data.status === 'steered') recordTurnStarted(activeRuntimeResumePath);
           if (Array.isArray(data.queue)) queuedFollowUps = data.queue;
+          if ('guidance' in data) applyGuidanceState(data.guidance);
           const messageText = state.row.querySelector('.message-text');
           if (messageText) messageText.innerHTML = renderMarkdownBlocks(editedText);
           trimTimelineAfter(state.row);
@@ -3331,9 +3376,10 @@ const CLIENT_BUILD = '20260706-manual-projects';
           }
           byKey.set(key, { workdir: value, label: label || projectDisplayName(value), count });
         };
-        projectsCache.forEach((project) => add(project.workdir, projectDisplayName(project.workdir), projectThreadsForWorkdir(project.workdir, project.entries).length));
-        projectRootsCache.forEach((root) => add(root.path, root.name || projectDisplayName(root.path), 0));
-        add(currentProjectRootPath || currentWorkdir, projectDisplayName(currentProjectRootPath || currentWorkdir), 0);
+        sidebarVisibleProjects().forEach((project) => {
+          const threads = project.threads || projectThreadsForWorkdir(project.workdir, project.entries);
+          add(project.workdir, projectDisplayName(project.workdir), threads.length);
+        });
         const currentKey = normalizeSessionPath(session.projectRoot || session.cwd || '');
         return [...byKey.values()]
           .map((option) => ({ ...option, current: normalizeSessionPath(option.workdir) === currentKey }))
@@ -3938,14 +3984,14 @@ const CLIENT_BUILD = '20260706-manual-projects';
               <button type="button" class="workspace-root-button" aria-expanded="${expanded ? 'true' : 'false'}" title="${escapeAttr(p.workdir)}">
                 <span class="workspace-root-chevron" aria-hidden="true">${expanded ? '⌄' : '›'}</span>
                 <span class="workspace-folder-icon" aria-hidden="true">${FOLDER_BUTTON_SVG}</span>
-                <span class="thread-label">${escapeHtml(name)}</span>
+                <span class="thread-label workspace-root-name">${escapeHtml(name)}</span>
                 <span class="workspace-root-meta">${threads.length ? `${threads.length} 条` : '空'}</span>
               </button>
               <div class="workspace-root-actions">
                 <button type="button" class="workspace-root-menu-btn" title="更多项目操作" aria-label="更多项目操作">⋯</button>
-                <button type="button" class="project-rename-btn" title="重命名项目" aria-label="重命名项目">✎</button>
+                <button type="button" class="project-rename-btn workspace-root-secondary-action" title="重命名项目" aria-label="重命名项目">✎</button>
                 <button type="button" class="project-new-thread-btn" title="在此项目中新建会话" aria-label="在此项目中新建会话">+</button>
-                <button type="button" class="project-open-btn" title="设为项目主目录" aria-label="设为项目主目录">${FOLDER_BUTTON_SVG}</button>
+                <button type="button" class="project-open-btn workspace-root-secondary-action" title="设为项目主目录" aria-label="设为项目主目录">${FOLDER_BUTTON_SVG}</button>
               </div>
             </div>`;
           root.querySelector('.workspace-root-row').addEventListener('contextmenu', (event) => openWorkspaceRootMenuFromEvent(event, p));
@@ -4316,6 +4362,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
         streamEl = null;
         codexRunning = false;
         queuedFollowUps = [];
+        guidanceState = { pending: 0, saved: 0, count: 0, items: [] };
         turnQuestionText.clear();
         latestUserQuestionText = '';
         activeTurnId = '';
@@ -4334,6 +4381,19 @@ const CLIENT_BUILD = '20260706-manual-projects';
         if (textValue) return textValue.length > 120 ? `${textValue.slice(0, 120)}…` : textValue;
         const count = (item.attachments || []).length;
         return count === 1 ? '包含 1 个附件' : `包含 ${count} 个附件`;
+      }
+      function normalizeGuidanceState(value) {
+        const state = value && typeof value === 'object' ? value : {};
+        const items = Array.isArray(state.items) ? state.items : [];
+        return {
+          pending: Number(state.pending || 0),
+          saved: Number(state.saved || 0),
+          count: Number(state.count || items.length || 0),
+          items
+        };
+      }
+      function applyGuidanceState(value) {
+        guidanceState = normalizeGuidanceState(value);
       }
       function renderQueuePanel() {
         if (!queuePanel) return;
@@ -4424,9 +4484,15 @@ const CLIENT_BUILD = '20260706-manual-projects';
         send.disabled = composerRequestInFlight;
         updateComposerContext();
         if (composerFollowupHint) {
+          const guidanceCount = Number(guidanceState.count || 0);
+          const guidanceText = guidanceCount
+            ? (guidanceState.pending
+              ? `${guidanceCount} 条引导合并中，失败不会自动重跑`
+              : `${guidanceCount} 条引导已保留，失败不会自动重跑`)
+            : '';
           const showFollowupHint = codexRunning && composerHasDraft() && !composerRequestInFlight;
-          composerFollowupHint.hidden = !showFollowupHint;
-          composerFollowupHint.textContent = showFollowupHint ? '运行中按 Enter 发送引导，未接收则自动排队' : '';
+          composerFollowupHint.hidden = !guidanceText && !showFollowupHint;
+          composerFollowupHint.textContent = guidanceText || (showFollowupHint ? '运行中按 Enter 发送引导，后台合并，失败不会自动重跑' : '');
         }
         if (composerRunState) {
           const state = composerRequestInFlight ? 'busy' : (shouldStop ? 'running' : 'idle');
@@ -4439,6 +4505,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
         const data = await response.json().catch(() => ({}));
         if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
         if (Array.isArray(data.queue)) queuedFollowUps = data.queue;
+        if ('guidance' in data) applyGuidanceState(data.guidance);
         codexRunning = Boolean(data.running);
         updateComposerControls();
         renderQueuePanel();
@@ -4597,10 +4664,14 @@ const CLIENT_BUILD = '20260706-manual-projects';
           if (data.resume_path) currentResumePath = data.resume_path;
           activeRuntimeResumePath = data.resume_path || activeRuntimeResumePath || currentResumePath;
           if (typeof data.running === 'boolean') codexRunning = data.running;
-          else if (data.status === 'started' || data.status === 'steered' || data.status === 'queued') codexRunning = true;
+          else if (data.status === 'started' || data.status === 'steered' || data.status === 'queued' || data.status === 'guidance_pending') codexRunning = true;
           if (data.status === 'started' || data.status === 'steered') recordTurnStarted(activeRuntimeResumePath);
           if (Array.isArray(data.queue)) {
             queuedFollowUps = data.queue;
+          }
+          if ('guidance' in data) applyGuidanceState(data.guidance);
+          if (data.status === 'guidance_pending') {
+            deliverAppNotification({ title: '引导已接收', body: '正在后台合并到当前回复，失败不会自动重跑。', kind: 'info', minVisible: false });
           }
           updateComposerControls();
           renderQueuePanel();
@@ -4631,6 +4702,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
           if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
           codexRunning = false;
           queuedFollowUps = [];
+          guidanceState = { pending: 0, saved: 0, count: 0, items: [] };
           updateComposerControls();
           renderQueuePanel();
           addSystem('已停止当前 Codex 进程。');
@@ -4653,6 +4725,16 @@ const CLIENT_BUILD = '20260706-manual-projects';
         persistComposerDraft();
         updateComposerControls();
         text.focus();
+      }
+      function dataTransferHasFiles(dataTransfer) {
+        return [...(dataTransfer?.types || [])].includes('Files');
+      }
+      function setComposerDropActive(active) {
+        if (!composerDropSurface) return;
+        composerDropSurface.classList.toggle('composer-drop-active', Boolean(active));
+      }
+      function composerAttachmentName(file) {
+        return String(file?.webkitRelativePath || file?.name || 'attachment').replace(/\\/g, '/');
       }
       function renderAttachments() {
         const tray = $('attachmentTray');
@@ -4699,20 +4781,34 @@ const CLIENT_BUILD = '20260706-manual-projects';
         }
         return true;
       }
+      async function addComposerFileAttachment(file) {
+        if (!file) return false;
+        if (await addImageAttachment(file)) return true;
+        const name = composerAttachmentName(file);
+        if (file.size > 220 * 1024) {
+          addSystem(`附件过大，已跳过：${name} (${toKB(file.size)})`, true);
+          return true;
+        }
+        try {
+          const body = await file.text();
+          appendToComposer(`<file name="${escapeAttr(name)}">\n${body}\n</file>`);
+        } catch (error) {
+          addSystem(`读取附件失败：${name}：${error.message || error}`, true);
+        }
+        return true;
+      }
       async function handlePickedFiles(files) {
-        const picked = [...files];
+        const picked = [...(files || [])].filter(Boolean);
+        if (!picked.length) return;
+        const limit = 80;
+        let count = 0;
         for (const file of picked) {
-          if (await addImageAttachment(file)) continue;
-          if (file.size > 220 * 1024) {
-            addSystem(`附件过大，已跳过：${file.name} (${toKB(file.size)})`, true);
-            continue;
+          if (count >= limit) {
+            addSystem(`文件数量过多，已只处理前 ${limit} 个。`, true);
+            break;
           }
-          try {
-            const body = await file.text();
-            appendToComposer(`<file name="${file.name}">\n${body}\n</file>`);
-          } catch (error) {
-            addSystem(`读取附件失败：${file.name}：${error.message || error}`, true);
-          }
+          count += 1;
+          await addComposerFileAttachment(file);
         }
       }
       let recognition = null;
@@ -4761,6 +4857,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
             if (data.running && !codexRunning) recordTurnStarted(activeRuntimeResumePath);
             codexRunning = Boolean(data.running);
             queuedFollowUps = Array.isArray(data.queue) ? data.queue : [];
+            if ('guidance' in data) applyGuidanceState(data.guidance);
             if ('pendingUserInput' in data) {
               if (data.pendingUserInput) setPendingUserInputRequest(data.pendingUserInput);
               else clearPendingUserInputRequest();
@@ -5052,30 +5149,30 @@ const CLIENT_BUILD = '20260706-manual-projects';
           });
         }
       });
-      terminalSpawnBtn?.addEventListener('click', () => spawnTerminal().catch((error) => setTerminalStatus(`终端创建失败：${error.message || error}`, true)));
-      terminalRefreshBtn?.addEventListener('click', () => loadTerminalSessions().catch((error) => setTerminalStatus(`终端刷新失败：${error.message || error}`, true)));
-      terminalKillBtn?.addEventListener('click', () => killActiveTerminal().catch((error) => setTerminalStatus(`终端结束失败：${error.message || error}`, true)));
-      terminalSendInputBtn?.addEventListener('click', () => sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true)));
-      terminalStdinInput?.addEventListener('keydown', (event) => {
+      terminalSpawnBtn.addEventListener('click', () => spawnTerminal().catch((error) => setTerminalStatus(`终端创建失败：${error.message || error}`, true)));
+      terminalRefreshBtn.addEventListener('click', () => loadTerminalSessions().catch((error) => setTerminalStatus(`终端刷新失败：${error.message || error}`, true)));
+      terminalKillBtn.addEventListener('click', () => killActiveTerminal().catch((error) => setTerminalStatus(`终端结束失败：${error.message || error}`, true)));
+      terminalSendInputBtn.addEventListener('click', () => sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true)));
+      terminalStdinInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
           sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true));
         }
       });
-      gitRefreshBtn?.addEventListener('click', () => loadGitPanel(gitPanelState.scope).catch((error) => setGitStatusLine(`Git 刷新失败：${error.message || error}`, true)));
-      gitOpenRepoBtn?.addEventListener('click', () => {
+      gitRefreshBtn.addEventListener('click', () => loadGitPanel(gitPanelState.scope).catch((error) => setGitStatusLine(`Git 刷新失败：${error.message || error}`, true)));
+      gitOpenRepoBtn.addEventListener('click', () => {
         const repo = gitPanelState.status?.repoRoot || gitPanelState.status?.root || currentWorkdir;
         if (repo) openLocalPath(repo);
       });
-      gitScopeUnstaged?.addEventListener('click', () => loadGitPanel('unstaged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
-      gitScopeStaged?.addEventListener('click', () => loadGitPanel('staged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
-      gitStageSelected?.addEventListener('click', () => runGitPathAction('/git/stage').catch((error) => setGitStatusLine(`暂存失败：${error.message || error}`, true)));
-      gitUnstageSelected?.addEventListener('click', () => runGitPathAction('/git/unstage').catch((error) => setGitStatusLine(`取消暂存失败：${error.message || error}`, true)));
-      gitDiscardSelected?.addEventListener('click', () => discardSelectedGitChanges().catch((error) => setGitStatusLine(`丢弃失败：${error.message || error}`, true)));
-      gitCommitBtn?.addEventListener('click', () => commitGitChanges().catch((error) => setGitStatusLine(`提交失败：${error.message || error}`, true)));
-      gitPullBtn?.addEventListener('click', () => pullGitChanges().catch((error) => setGitStatusLine(`拉取失败：${error.message || error}`, true)));
-      gitPushBtn?.addEventListener('click', () => pushGitChanges().catch((error) => setGitStatusLine(`推送失败：${error.message || error}`, true)));
-      gitBranchCreate?.addEventListener('click', () => createGitBranch().catch((error) => setGitStatusLine(`创建分支失败：${error.message || error}`, true)));
+      gitScopeUnstaged.addEventListener('click', () => loadGitPanel('unstaged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
+      gitScopeStaged.addEventListener('click', () => loadGitPanel('staged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
+      gitStageSelected.addEventListener('click', () => runGitPathAction('/git/stage').catch((error) => setGitStatusLine(`暂存失败：${error.message || error}`, true)));
+      gitUnstageSelected.addEventListener('click', () => runGitPathAction('/git/unstage').catch((error) => setGitStatusLine(`取消暂存失败：${error.message || error}`, true)));
+      gitDiscardSelected.addEventListener('click', () => discardSelectedGitChanges().catch((error) => setGitStatusLine(`丢弃失败：${error.message || error}`, true)));
+      gitCommitBtn.addEventListener('click', () => commitGitChanges().catch((error) => setGitStatusLine(`提交失败：${error.message || error}`, true)));
+      gitPullBtn.addEventListener('click', () => pullGitChanges().catch((error) => setGitStatusLine(`拉取失败：${error.message || error}`, true)));
+      gitPushBtn.addEventListener('click', () => pushGitChanges().catch((error) => setGitStatusLine(`推送失败：${error.message || error}`, true)));
+      gitBranchCreate.addEventListener('click', () => createGitBranch().catch((error) => setGitStatusLine(`创建分支失败：${error.message || error}`, true)));
       projectOpenConfirm.addEventListener('click', () => openProjectFolder(projectPathInput.value));
       projectPickFolder.addEventListener('click', pickProjectFolder);
       projectBrowseUp.addEventListener('click', () => {
@@ -5122,9 +5219,14 @@ const CLIENT_BUILD = '20260706-manual-projects';
         event.stopPropagation();
         const button = event.target && event.target.closest ? event.target.closest('button') : null;
         if (!button) return;
-        if (button.id === 'composerAddAttachment') {
+        if (button === composerAddAttachment || button.id === 'composerAddAttachment') {
           closeComposerMoreMenu();
           $('filePicker').click();
+          return;
+        }
+        if (button === composerAddFolder || button.id === 'composerAddFolder') {
+          closeComposerMoreMenu();
+          $('folderPicker').click();
           return;
         }
         if (button.id === 'composerSpeedTrigger') {
@@ -5147,6 +5249,37 @@ const CLIENT_BUILD = '20260706-manual-projects';
         handlePickedFiles(event.currentTarget.files || []);
         event.currentTarget.value = '';
       });
+      $('folderPicker').addEventListener('change', (event) => {
+        handlePickedFiles(event.currentTarget.files || []);
+        event.currentTarget.value = '';
+      });
+      if (composerDropSurface) {
+        composerDropSurface.addEventListener('dragenter', (event) => {
+          if (!dataTransferHasFiles(event.dataTransfer)) return;
+          event.preventDefault();
+          composerDragDepth += 1;
+          setComposerDropActive(true);
+        });
+        composerDropSurface.addEventListener('dragover', (event) => {
+          if (!dataTransferHasFiles(event.dataTransfer)) return;
+          event.preventDefault();
+          if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+          setComposerDropActive(true);
+        });
+        composerDropSurface.addEventListener('dragleave', (event) => {
+          if (!dataTransferHasFiles(event.dataTransfer)) return;
+          event.preventDefault();
+          composerDragDepth = Math.max(0, composerDragDepth - 1);
+          if (composerDragDepth === 0) setComposerDropActive(false);
+        });
+        composerDropSurface.addEventListener('drop', (event) => {
+          if (!dataTransferHasFiles(event.dataTransfer)) return;
+          event.preventDefault();
+          composerDragDepth = 0;
+          setComposerDropActive(false);
+          handlePickedFiles(event.dataTransfer?.files || []);
+        });
+      }
       $('dictationBtn').addEventListener('click', toggleDictation);
       sideFilter.addEventListener('input', () => { renderSessions(); renderProjects(); });
       $('timeline').addEventListener('scroll', () => {
