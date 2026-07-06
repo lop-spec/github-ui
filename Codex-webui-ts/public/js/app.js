@@ -5051,6 +5051,10 @@ const CLIENT_BUILD = '20260706-manual-projects';
       });
       $('dictationBtn').addEventListener('click', toggleDictation);
       sideFilter.addEventListener('input', () => { renderSessions(); renderProjects(); });
+      $('timeline').addEventListener('scroll', () => {
+        const timeline = $('timeline');
+        if (timeline.scrollTop <= 80) loadOlderTranscriptPage().catch((error) => addSystem(`加载更早历史失败：${error.message || error}`, true));
+      });
       log.addEventListener('click', (event) => {
         const trigger = event.target && event.target.closest ? event.target.closest('.local-path-link') : null;
         if (!trigger) return;
