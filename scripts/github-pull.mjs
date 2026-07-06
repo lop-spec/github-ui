@@ -10,6 +10,7 @@ import {
   createPathMatcher,
   createSyncFilter,
   gitBlobSha,
+  localSourceInfo,
   loadConfig,
   toPosixPath
 } from './github-sync.mjs';
@@ -22,6 +23,7 @@ export const DEFAULT_PULL_CONFIG = {
   branch: 'main',
   intervalMs: 30000,
   maxApplyPerRun: 200,
+  sourceMarkerPath: 'sync-meta/source.json',
   backupRoot: 'outputs/github-pull-backups',
   statePath: 'logs/github-pull-state.json',
   protectedPaths: [
@@ -124,6 +126,7 @@ export function loadPullConfig(rootDir = root, env = process.env) {
   pull.token = env.GITHUB_PULL_TOKEN || env.GITHUB_SYNC_TOKEN || env.GITHUB_TOKEN || '';
   pull.intervalMs = Number(env.GITHUB_PULL_INTERVAL_MS || pull.intervalMs || DEFAULT_PULL_CONFIG.intervalMs);
   pull.maxApplyPerRun = Number(pull.maxApplyPerRun || DEFAULT_PULL_CONFIG.maxApplyPerRun);
+  pull.sourceMarkerPath = toPosixPath(pull.sourceMarkerPath || syncConfig.sourceMarkerPath || DEFAULT_PULL_CONFIG.sourceMarkerPath);
   pull.backupRoot = toPosixPath(pull.backupRoot || DEFAULT_PULL_CONFIG.backupRoot);
   pull.statePath = toPosixPath(pull.statePath || DEFAULT_PULL_CONFIG.statePath);
   pull.protectedPaths = (pull.protectedPaths || []).map(toPosixPath).filter(Boolean);
@@ -226,6 +229,25 @@ function readJson(filePath, fallback = {}) {
   try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return fallback; }
 }
 
+function writePullState(rootDir, pullConfig, data) {
+  writeJson(path.join(rootDir, pullConfig.statePath), {
+    ...data,
+    updatedAt: new Date().toISOString()
+  });
+}
+
+async function remoteSourceInfo(pullConfig, remoteSnapshot) {
+  const markerPath = pullConfig.sourceMarkerPath || DEFAULT_PULL_CONFIG.sourceMarkerPath;
+  const marker = remoteSnapshot.files.find((file) => file.path === markerPath);
+  if (!marker) return null;
+  const content = await fetchBlobContent(pullConfig, marker.sha);
+  try {
+    return JSON.parse(content.toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
 export function collectLocalPortableFiles(rootDir, syncConfig) {
   return collectSyncFiles(rootDir, syncConfig).files;
 }
@@ -242,6 +264,7 @@ export async function compareRemoteToLocal({ rootDir = root, syncConfig, pullCon
   const missingRemote = [];
 
   for (const remote of remoteFiles) {
+    if (remote.path === pullConfig.sourceMarkerPath) continue;
     const local = localByPath.get(remote.path);
     const localSha = local?.sha || null;
     if (localSha === remote.sha) continue;
@@ -281,6 +304,52 @@ export async function compareRemoteToLocal({ rootDir = root, syncConfig, pullCon
 
 export async function pullOnce({ rootDir = root, syncConfig, pullConfig, dryRun = false } = {}) {
   const remoteSnapshot = await fetchRemoteSnapshot(pullConfig);
+  const pullState = readJson(path.join(rootDir, pullConfig.statePath), null);
+  const source = localSourceInfo(rootDir, syncConfig);
+  const remoteSource = await remoteSourceInfo(pullConfig, remoteSnapshot);
+  if (pullState?.headSha === remoteSnapshot.headSha) {
+    return {
+      ok: true,
+      dryRun,
+      skipped: true,
+      skipReason: 'already-processed-head',
+      applied: [],
+      headSha: remoteSnapshot.headSha,
+      remoteSource,
+      localSource: source,
+      remoteCount: remoteSnapshot.files.length,
+      localCount: collectLocalPortableFiles(rootDir, syncConfig).length,
+      changed: [],
+      protectedChanged: [],
+      missingRemote: []
+    };
+  }
+  const syncState = readJson(path.join(rootDir, syncConfig.sourceStatePath || 'logs/github-sync-state.json'), null);
+  const knownOwnHead = syncState?.headSha === remoteSnapshot.headSha || syncState?.commitSha === remoteSnapshot.headSha;
+  if (remoteSource?.sourceId === source.sourceId && knownOwnHead) {
+    writePullState(rootDir, pullConfig, {
+      headSha: remoteSnapshot.headSha,
+      skipped: true,
+      skipReason: 'own-source',
+      remoteSource,
+      localSource: source
+    });
+    return {
+      ok: true,
+      dryRun,
+      skipped: true,
+      skipReason: 'own-source',
+      applied: [],
+      headSha: remoteSnapshot.headSha,
+      remoteSource,
+      localSource: source,
+      remoteCount: remoteSnapshot.files.length,
+      localCount: collectLocalPortableFiles(rootDir, syncConfig).length,
+      changed: [],
+      protectedChanged: [],
+      missingRemote: []
+    };
+  }
   const comparison = await compareRemoteToLocal({
     rootDir,
     syncConfig,
@@ -291,7 +360,7 @@ export async function pullOnce({ rootDir = root, syncConfig, pullConfig, dryRun 
   if (comparison.changed.length > pullConfig.maxApplyPerRun) {
     throw new Error(`refusing to apply ${comparison.changed.length} files in one pull; inspect status or raise maxApplyPerRun`);
   }
-  if (dryRun) return { ok: true, dryRun: true, applied: [], ...comparison };
+  if (dryRun) return { ok: true, dryRun: true, applied: [], remoteSource, localSource: source, ...comparison };
 
   const runId = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const applied = [];
@@ -310,14 +379,15 @@ export async function pullOnce({ rootDir = root, syncConfig, pullConfig, dryRun 
   }
 
   const state = {
-    updatedAt: new Date().toISOString(),
     headSha: comparison.headSha,
+    remoteSource,
+    localSource: source,
     applied,
     protectedChanged: comparison.protectedChanged.map(({ path, localSha, remoteSha, reason }) => ({ path, localSha, remoteSha, reason })),
     missingRemote: comparison.missingRemote
   };
-  writeJson(path.join(rootDir, pullConfig.statePath), state);
-  return { ok: true, dryRun: false, applied, ...comparison };
+  writePullState(rootDir, pullConfig, state);
+  return { ok: true, dryRun: false, applied, remoteSource, localSource: source, ...comparison };
 }
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -350,6 +420,7 @@ function printHelp() {
 function summarize(result) {
   return {
     headSha: result.headSha,
+    skipReason: result.skipReason || '',
     remoteCount: result.remoteCount,
     localCount: result.localCount,
     changedCount: result.changed.length,
@@ -362,6 +433,9 @@ function summarize(result) {
 function printResult(result, mode) {
   const summary = summarize(result);
   console.log(`[github-pull] ${mode}: remote=${summary.remoteCount}, local=${summary.localCount}, apply=${summary.appliedCount}, pending=${summary.changedCount}, protected=${summary.protectedChangedCount}, missingRemote=${summary.missingRemoteCount}`);
+  if (summary.skipReason) console.log(`[github-pull] skipped: ${summary.skipReason}`);
+  if (result.remoteSource?.sourceId) console.log(`[github-pull] remote source: ${result.remoteSource.sourceName || 'unknown'} (${result.remoteSource.sourceId})`);
+  if (result.localSource?.sourceId) console.log(`[github-pull] local source: ${result.localSource.sourceName || 'unknown'} (${result.localSource.sourceId})`);
   if (result.applied?.length) {
     for (const item of result.applied.slice(0, 40)) console.log(`  applied ${item.path}`);
   }
@@ -372,8 +446,9 @@ function printResult(result, mode) {
 
 async function runStatus(rootDir, syncConfig, pullConfig) {
   const remoteSnapshot = await fetchRemoteSnapshot(pullConfig);
+  const remoteSource = await remoteSourceInfo(pullConfig, remoteSnapshot);
   const result = await compareRemoteToLocal({ rootDir, syncConfig, pullConfig, remoteSnapshot, includeContent: true });
-  return { ok: true, applied: [], ...result, state: readJson(path.join(rootDir, pullConfig.statePath), null) };
+  return { ok: true, applied: [], remoteSource, localSource: localSourceInfo(rootDir, syncConfig), ...result, state: readJson(path.join(rootDir, pullConfig.statePath), null) };
 }
 
 async function runWatch(rootDir, syncConfig, pullConfig) {
