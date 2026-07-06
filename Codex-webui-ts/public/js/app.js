@@ -3989,9 +3989,9 @@ const CLIENT_BUILD = '20260706-project-window';
               </button>
               <div class="workspace-root-actions">
                 <button type="button" class="workspace-root-menu-btn" title="更多项目操作" aria-label="更多项目操作">⋯</button>
-                <button type="button" class="project-rename-btn" title="重命名项目" aria-label="重命名项目">✎</button>
+                <button type="button" class="project-rename-btn workspace-root-secondary-action" title="重命名项目" aria-label="重命名项目">✎</button>
                 <button type="button" class="project-new-thread-btn" title="在此项目中新建会话" aria-label="在此项目中新建会话">+</button>
-                <button type="button" class="project-open-btn" title="设为项目主目录" aria-label="设为项目主目录">${FOLDER_BUTTON_SVG}</button>
+                <button type="button" class="project-open-btn workspace-root-secondary-action" title="设为项目主目录" aria-label="设为项目主目录">${FOLDER_BUTTON_SVG}</button>
               </div>
             </div>`;
           root.querySelector('.workspace-root-row').addEventListener('contextmenu', (event) => openWorkspaceRootMenuFromEvent(event, p));

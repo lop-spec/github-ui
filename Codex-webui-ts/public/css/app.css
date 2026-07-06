@@ -484,14 +484,22 @@
       .workspace-root-menu-btn {
         font-size: 16px;
       }
-      .workspace-root-row:not(:hover):not(:focus-within) .project-rename-btn,
-      .workspace-root-row:not(:hover):not(:focus-within) .project-open-btn {
+      .workspace-root-secondary-action {
         width: 0;
         min-width: 0;
-        flex-basis: 0;
+        flex: 0 0 0;
+        overflow: hidden;
         opacity: 0;
         pointer-events: none;
         visibility: hidden;
+      }
+      .workspace-root-row:hover .workspace-root-secondary-action,
+      .workspace-root-row:focus-within .workspace-root-secondary-action {
+        width: 28px;
+        flex-basis: 28px;
+        opacity: 1;
+        pointer-events: auto;
+        visibility: visible;
       }
       .workspace-thread-list {
         list-style: none;
