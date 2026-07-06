@@ -151,6 +151,26 @@ function sendJson(res: ServerResponse, status: number, data: unknown): void {
   res.end(JSON.stringify(data));
 }
 
+function launchWebUiRecovery(mode: 'restart' | 'recover'): { ok: boolean; pid?: number; mode: string; logDir: string; error?: string } {
+  const scriptPath = path.join(process.cwd(), 'scripts', 'webui-recover.mjs');
+  if (!fs.existsSync(scriptPath)) return { ok: false, mode, logDir: path.join(process.cwd(), 'logs'), error: `Missing recovery script: ${scriptPath}` };
+  const logDir = path.join(process.cwd(), 'logs');
+  fs.mkdirSync(logDir, { recursive: true });
+  const out = fs.openSync(path.join(logDir, `webui-${mode}.out.log`), 'a');
+  const err = fs.openSync(path.join(logDir, `webui-${mode}.err.log`), 'a');
+  const child = spawn(process.execPath, [scriptPath, '--mode', mode, '--delay', mode === 'restart' ? '900' : '100', '--launch-app'], {
+    cwd: process.cwd(),
+    detached: true,
+    windowsHide: true,
+    stdio: ['ignore', out, err],
+    env: { ...process.env }
+  });
+  child.unref();
+  try { fs.closeSync(out); } catch {}
+  try { fs.closeSync(err); } catch {}
+  return { ok: true, pid: child.pid, mode, logDir };
+}
+
 function readJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<any> {
   return new Promise((resolveRead, reject) => {
     let body = '';
@@ -1914,6 +1934,44 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && url === '/webui/restart') {
+    if (!requireAuth(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+    const result = launchWebUiRecovery('restart');
+    return sendJson(res, result.ok ? 202 : 500, result);
+  }
+
+  if (req.method === 'POST' && url === '/webui/recover') {
+    if (!requireAuth(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+    const result = launchWebUiRecovery('recover');
+    return sendJson(res, result.ok ? 202 : 500, result);
+  }
+
+  if (req.method === 'POST' && url === '/webui/app-server/ensure') {
+    if (!requireAuth(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+    readJsonBody(req)
+      .then(async (body) => {
+        const backend = await codexService.ensureBackendReady();
+        const interrupted = body?.recoverInterrupted === false
+          ? { ok: true, skipped: true, reason: 'disabled by request' }
+          : await codexService.recoverInterruptedTurnIfNeeded();
+        broadcastStatus();
+        sendJson(res, 200, { ok: true, backend, interrupted });
+      })
+      .catch((error) => sendJson(res, 500, { ok: false, error: actionError(error) }));
+    return;
+  }
+
+  if (req.method === 'POST' && url === '/webui/interrupted/recover') {
+    if (!requireAuth(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+    codexService.recoverInterruptedTurnIfNeeded()
+      .then((result) => {
+        broadcastStatus();
+        sendJson(res, result.ok === false ? 409 : 200, result);
+      })
+      .catch((error) => sendJson(res, 500, { ok: false, error: actionError(error) }));
+    return;
+  }
+
   if (req.method === 'POST' && url === '/new-chat') {
     if (!requireAuth(req)) { setCORS(res); res.writeHead(401); return res.end(); }
     codexService.clearQueuedInputs();
@@ -2392,6 +2450,16 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, HOST, () => {
   codexCliUpdater = startCodexCliUpdater((payload) => broadcast('notification', payload));
+  setTimeout(() => {
+    codexService.recoverInterruptedTurnIfNeeded()
+      .then((result) => {
+        if (!result?.skipped) {
+          broadcast('system', { text: result?.ok === false ? `自动恢复检查未完成：${result.reason || 'unknown'}` : '自动恢复检查完成。' });
+          broadcastStatus();
+        }
+      })
+      .catch((error) => broadcast('stderr', { text: `自动恢复检查失败：${actionError(error)}` }));
+  }, 1500);
   const network = runtimeNetworkInfo();
   console.log(`Codex WebUI listening on ${HOST}:${PORT}`);
   console.log(`Codex WebUI local: ${network.localUrl}`);

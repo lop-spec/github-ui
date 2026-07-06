@@ -86,15 +86,14 @@
             </div>
           </div>
           <div class="top-right">
-            <span class="pill mono" id="modelPill">gpt-5.5</span>
             <span class="pill" id="resumePill">未恢复</span>
-            <button class="ghost-btn danger-btn" id="cancelBtn" title="停止当前 Codex 进程">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 6h12v12H6z" stroke="currentColor" stroke-width="1.8"/></svg>
-              停止
-            </button>
-            <button class="ghost-btn" id="restartBtn" title="重启当前会话">
+            <button class="ghost-btn" id="restartBtn" title="重启整个 WebUI 服务">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M20 12a8 8 0 1 1-2.35-5.65M20 4v5h-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
               重启
+            </button>
+            <button class="ghost-btn" id="recoverBtn" title="检查并恢复 WebUI、app-server 和独立 App">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3a9 9 0 0 1 8.95 8H22l-2.4 2.4L17.2 11h1.73A7 7 0 1 0 12 19a6.96 6.96 0 0 0 5.18-2.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              恢复
             </button>
           </div>
         </header>
