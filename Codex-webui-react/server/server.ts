@@ -2209,6 +2209,62 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && url === '/project/create') {
+    if (!requireAuth(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+    readJsonBody(req)
+      .then((body) => {
+        const parent = resolveProjectPath(body?.parentPath || body?.parent || codexService.getWorkdir());
+        if (!parent) return sendJson(res, 400, { ok: false, error: 'Parent path must be an existing local folder' });
+        const name = normalizeProjectFolderName(body?.name);
+        const projectPath = childProjectPath(parent, name);
+        if (fs.existsSync(projectPath)) return sendJson(res, 409, { ok: false, error: 'Project folder already exists' });
+        fs.mkdirSync(projectPath);
+        const root = rememberProjectRoot(projectPath);
+        codexService.switchProject(projectPath, () => {
+          broadcastStatus();
+          sendJson(res, 200, { ok: true, path: projectPath, workdir: codexService.getWorkdir(), root, resume_path: null });
+        });
+      })
+      .catch((error) => {
+        const message = actionError(error);
+        sendJson(res, message.includes('Invalid') || message.includes('required') ? 400 : 500, { ok: false, error: message });
+      });
+    return;
+  }
+
+  if (req.method === 'POST' && url === '/project/rename') {
+    if (!requireAuth(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+    readJsonBody(req)
+      .then((body) => {
+        const oldPath = resolveProjectPath(body?.path || body?.workdir);
+        if (!oldPath) return sendJson(res, 400, { ok: false, error: 'Path must be an existing local folder' });
+        const name = normalizeProjectFolderName(body?.name || body?.newName);
+        const nextPath = childProjectPath(path.dirname(oldPath), name);
+        if (pathIdentity(oldPath) !== pathIdentity(nextPath) && fs.existsSync(nextPath)) {
+          return sendJson(res, 409, { ok: false, error: 'Project folder already exists' });
+        }
+        if (pathIdentity(oldPath) !== pathIdentity(nextPath)) fs.renameSync(oldPath, nextPath);
+        const history = readHistory();
+        const root = rewriteProjectRootPath(history, oldPath, nextPath);
+        writeHistory(history);
+        const current = codexService.getWorkdir();
+        if (isWithinProjectRoot(current, oldPath)) {
+          const nextWorkdir = rebasePathInsideRoot(current, oldPath, nextPath);
+          codexService.switchProject(nextWorkdir, () => {
+            broadcastStatus();
+            sendJson(res, 200, { ok: true, path: nextPath, workdir: codexService.getWorkdir(), root, resume_path: null });
+          });
+          return;
+        }
+        sendJson(res, 200, { ok: true, path: nextPath, workdir: nextPath, root, resume_path: null });
+      })
+      .catch((error) => {
+        const message = actionError(error);
+        sendJson(res, message.includes('already exists') ? 409 : message.includes('Invalid') || message.includes('required') ? 400 : 500, { ok: false, error: message });
+      });
+    return;
+  }
+
   if (req.method === 'GET' && url === '/filesystem/list') {
     if (!requireAuth(req)) { setCORS(res); res.writeHead(401); return res.end(); }
     const requestedPath = parsedUrl.searchParams.get('path') || codexService.getWorkdir() || process.cwd();
