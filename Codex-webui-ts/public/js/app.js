@@ -367,6 +367,7 @@ const CLIENT_BUILD = '20260706-project-window';
           permissionLevel: currentPermissionLevel(),
           composerMoreMenuOpen: Boolean(composerMoreMenu && !composerMoreMenu.hidden),
           accountModalOpen: $('accountModal')?.classList.contains('open') || false,
+          accountLimitsExpanded,
           accountLimitCards: accountLimitCards ? accountLimitCards.querySelectorAll('.account-limit-card').length : 0,
           debugNoEvents: DEBUG_NO_EVENTS,
           sidebarVisible: isVisible(document.querySelector('.sidebar')),
@@ -467,6 +468,7 @@ const CLIENT_BUILD = '20260706-project-window';
       let selectedServiceTier = '';
       let serviceTierOverrideActive = false;
       let accountStatusCache = null;
+      let accountLimitsExpanded = false;
       let composerRequestInFlight = false;
       const TRANSCRIPT_PAGE_LIMIT = 120;
       const SEND_BUTTON_SVG = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
