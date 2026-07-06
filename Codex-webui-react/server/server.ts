@@ -55,7 +55,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const PORT = process.env.PORT ? Number(process.env.PORT) : 5055;
+const PORT = process.env.PORT ? Number(process.env.PORT) : 5155;
 const HOST = process.env.HOST || '0.0.0.0';
 const TOKEN = process.env.WEBUI_TOKEN || '';
 const PUBLIC_AUTH_USER = process.env.CODEX_WEBUI_PUBLIC_USER || 'lop';
