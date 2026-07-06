@@ -2336,6 +2336,17 @@ const CLIENT_BUILD = '20260706-project-actions';
             })
           }));
       }
+      function sidebarVisibleProjects() {
+        const q = (sideFilter.value || '').toLowerCase();
+        const searchActive = Boolean(q);
+        const visible = [];
+        const list = projectsCache.filter((project) => !projectRootHidden(project) && projectMatchesQuery(project, q));
+        categorizeProjects(list).forEach((category) => {
+          const categoryExpanded = searchActive || expandedProjectCategories.has(category.id);
+          visible.push(...(categoryExpanded ? category.items : category.items.slice(0, SIDEBAR_VISIBLE_LIMIT)));
+        });
+        return visible;
+      }
       function toggleProjectExpanded(workdir) {
         const key = normalizeSessionPath(workdir);
         if (expandedProjectPaths.has(key)) expandedProjectPaths.delete(key);
