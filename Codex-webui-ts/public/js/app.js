@@ -4481,9 +4481,15 @@ const CLIENT_BUILD = '20260706-project-window';
         send.disabled = composerRequestInFlight;
         updateComposerContext();
         if (composerFollowupHint) {
+          const guidanceCount = Number(guidanceState.count || 0);
+          const guidanceText = guidanceCount
+            ? (guidanceState.pending
+              ? `${guidanceCount} 条引导合并中，失败不会自动重跑`
+              : `${guidanceCount} 条引导已保留，失败不会自动重跑`)
+            : '';
           const showFollowupHint = codexRunning && composerHasDraft() && !composerRequestInFlight;
-          composerFollowupHint.hidden = !showFollowupHint;
-          composerFollowupHint.textContent = showFollowupHint ? '运行中按 Enter 发送引导，未接收则自动排队' : '';
+          composerFollowupHint.hidden = !guidanceText && !showFollowupHint;
+          composerFollowupHint.textContent = guidanceText || (showFollowupHint ? '运行中按 Enter 发送引导，后台合并，失败不会自动重跑' : '');
         }
         if (composerRunState) {
           const state = composerRequestInFlight ? 'busy' : (shouldStop ? 'running' : 'idle');
