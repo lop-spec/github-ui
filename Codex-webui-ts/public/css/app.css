@@ -3843,6 +3843,13 @@
         }
       }
       @media (max-width: 700px) {
+        .recycle-restore-filter {
+          grid-template-columns: 1fr;
+          align-items: stretch;
+        }
+        .recycle-restore-filter-range {
+          justify-content: start;
+        }
         .composer-zone {
           padding: 0 10px 10px;
         }
