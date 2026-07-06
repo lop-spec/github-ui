@@ -53,8 +53,7 @@ export const DEFAULT_CONFIG = {
     'Codex-webui-react/index.html',
     'Codex-webui-react/server/**',
     'Codex-webui-react/src/**',
-    'Codex-webui-react/static/**',
-    'Codex-webui-react/docs/source-to-target-ledger.md'
+    'Codex-webui-react/static/**'
   ],
   externalRoots: [
     {
@@ -128,8 +127,16 @@ export const DEFAULT_CONFIG = {
     '**/.cache/**',
     '**/transfers/**',
     '**/sessions/**',
+    '**/history/**',
+    '**/auth/**',
     '**/tests/**',
+    '**/docs/**',
     '**/history.json',
+    '**/package-lock.json',
+    '**/default.rules',
+    'codex/skills/.system/**',
+    '**/.system/**',
+    '**/config.toml',
     '**/*.log',
     '**/*.tmp',
     '**/*.bak*',
@@ -145,9 +152,11 @@ export const DEFAULT_CONFIG = {
     '**/.env.*',
     'github-sync.config.json',
     'github-sync.config.local.json',
+    'github-pull.config.local.json',
     'Codex-webui-ts/src/public-tunnel.ts',
     'Codex-webui-react/server/public-tunnel.ts',
     'Codex-webui-ts/src/p2p-helper.ts',
+    'Codex-webui-react/docs/source-to-target-ledger.md',
     'Codex-webui-ts/public/p2p-phone.html',
     'Codex-webui-ts/public/css/p2p-phone.css',
     'Codex-webui-ts/public/js/p2p-phone.js',
@@ -194,8 +203,7 @@ export const DEFAULT_CONFIG = {
     'Codex-webui-react/index.html',
     'Codex-webui-react/server',
     'Codex-webui-react/src',
-    'Codex-webui-react/static',
-    'Codex-webui-react/docs/source-to-target-ledger.md'
+    'Codex-webui-react/static'
   ]
 };
 
