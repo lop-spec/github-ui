@@ -4376,6 +4376,19 @@ const CLIENT_BUILD = '20260706-project-window';
         const count = (item.attachments || []).length;
         return count === 1 ? '包含 1 个附件' : `包含 ${count} 个附件`;
       }
+      function normalizeGuidanceState(value) {
+        const state = value && typeof value === 'object' ? value : {};
+        const items = Array.isArray(state.items) ? state.items : [];
+        return {
+          pending: Number(state.pending || 0),
+          saved: Number(state.saved || 0),
+          count: Number(state.count || items.length || 0),
+          items
+        };
+      }
+      function applyGuidanceState(value) {
+        guidanceState = normalizeGuidanceState(value);
+      }
       function renderQueuePanel() {
         if (!queuePanel) return;
         if (!queuedFollowUps.length) {
