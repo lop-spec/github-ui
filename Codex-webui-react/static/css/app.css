@@ -197,6 +197,30 @@
         font-weight: 650;
         text-transform: uppercase;
       }
+      .section-title-with-action {
+        gap: 8px;
+      }
+      .section-title-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .section-title-action {
+        width: 22px;
+        height: 22px;
+        display: inline-grid;
+        place-items: center;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 16px;
+        line-height: 1;
+      }
+      .section-title-action:hover,
+      .section-title-action:focus-visible {
+        background: var(--surface-hover);
+        color: var(--text);
+      }
       .thread-list, .project-list {
         display: grid;
         gap: 2px;
@@ -419,12 +443,14 @@
         gap: 2px;
       }
       .project-new-thread-btn,
+      .project-rename-btn,
       .workspace-root-menu-btn,
       .project-open-btn {
         width: 28px;
         height: 28px;
       }
       .project-new-thread-btn,
+      .project-rename-btn,
       .workspace-root-menu-btn {
         display: inline-grid;
         place-items: center;
@@ -435,9 +461,13 @@
         line-height: 1;
       }
       .project-new-thread-btn:hover,
+      .project-rename-btn:hover,
       .workspace-root-menu-btn:hover {
         background: var(--surface-hover);
         color: var(--text);
+      }
+      .project-rename-btn {
+        font-size: 15px;
       }
       .workspace-root-menu-btn {
         font-size: 16px;

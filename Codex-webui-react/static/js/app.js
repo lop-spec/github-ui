@@ -18,6 +18,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
       const pinnedSessionsEl = $('pinnedSessions');
       const projectsEl = $('projects');
       const openFolderBtn = $('openFolderBtn');
+      const createProjectBtn = $('createProjectBtn');
       const restoreHistoryBtn = $('restoreHistoryBtn');
       const openAccountBtn = $('openAccountBtn');
       const historyBackBtn = $('historyBackBtn');
@@ -2780,6 +2781,23 @@ const CLIENT_BUILD = '20260706-manual-projects';
         const hidden = Math.max(0, total - SIDEBAR_VISIBLE_LIMIT);
         return expanded ? `收起为 ${SIDEBAR_VISIBLE_LIMIT} ${noun}` : `显示剩余 ${hidden} ${noun}`;
       }
+      function projectThreadVisibleCollapsed(thread, now = Date.now()) {
+        const time = sessionTimeMs(thread);
+        return Boolean(
+          isRunningSession(thread)
+          || sameSessionPath(thread?.path, currentResumePath)
+          || (time > 0 && now - time <= PROJECT_THREAD_RECENT_WINDOW_MS)
+        );
+      }
+      function visibleProjectThreads(threads, expanded, searchActive) {
+        if (searchActive || expanded) return threads;
+        const now = Date.now();
+        return (threads || []).filter((thread) => projectThreadVisibleCollapsed(thread, now));
+      }
+      function projectThreadOverflowLabel(total, visibleCount, expanded) {
+        const hidden = Math.max(0, total - visibleCount);
+        return expanded ? '收起到近 30 分钟' : `显示剩余 ${hidden} 条项目会话`;
+      }
       function createSidebarOverflowButton(label, onClick) {
         const button = document.createElement('button');
         button.type = 'button';
@@ -3742,6 +3760,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
         menu.innerHTML = `
           <button data-action="set-current">设为项目主目录</button>
           <button data-action="new-thread">在此项目中新建会话</button>
+          <button data-action="rename-project">重命名项目</button>
           <button data-action="open-explorer">在资源管理器中打开</button>
           <button data-action="cleanup-sessions">清理旧会话...</button>
           <button data-action="remove-root" class="danger">从列表中移除</button>
@@ -3754,6 +3773,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
           try {
             if (action === 'set-current') await openProjectFolder(project.workdir);
             if (action === 'new-thread') await openProjectFolder(project.workdir);
+            if (action === 'rename-project') await renameProjectFolder(project);
             if (action === 'open-explorer') await openLocalPath(project.workdir);
             if (action === 'cleanup-sessions') showWorkspaceSessionCleanupDialog(project);
             if (action === 'remove-root') await removeWorkspaceRoot(project);
@@ -3923,6 +3943,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
               </button>
               <div class="workspace-root-actions">
                 <button type="button" class="workspace-root-menu-btn" title="更多项目操作" aria-label="更多项目操作">⋯</button>
+                <button type="button" class="project-rename-btn" title="重命名项目" aria-label="重命名项目">✎</button>
                 <button type="button" class="project-new-thread-btn" title="在此项目中新建会话" aria-label="在此项目中新建会话">+</button>
                 <button type="button" class="project-open-btn" title="设为项目主目录" aria-label="设为项目主目录">${FOLDER_BUTTON_SVG}</button>
               </div>
@@ -3932,6 +3953,11 @@ const CLIENT_BUILD = '20260706-manual-projects';
           root.querySelector('.workspace-root-menu-btn').addEventListener('click', (event) => {
             openWorkspaceRootMenuFromEvent(event, p);
           });
+          root.querySelector('.project-rename-btn').addEventListener('click', (event) => {
+            event.stopPropagation();
+            renameProjectFolder(p);
+          });
+          root.querySelector('.project-rename-btn').addEventListener('contextmenu', (event) => openWorkspaceRootMenuFromEvent(event, p));
           root.querySelector('.project-open-btn').addEventListener('click', (event) => {
             event.stopPropagation();
             openProjectFolder(p.workdir);
@@ -3946,13 +3972,13 @@ const CLIENT_BUILD = '20260706-manual-projects';
             const threadList = document.createElement('ul');
             threadList.className = 'workspace-thread-list';
             const threadListExpanded = searchActive || expandedProjectThreadLists.has(key);
-            const visibleThreads = threadListExpanded ? threads : threads.slice(0, SIDEBAR_VISIBLE_LIMIT);
+            const visibleThreads = visibleProjectThreads(threads, threadListExpanded, searchActive);
             visibleThreads.forEach((thread) => threadList.appendChild(createProjectThreadItem(thread, p.workdir)));
-            if (!searchActive && threads.length > SIDEBAR_VISIBLE_LIMIT) {
+            if (!searchActive && (threadListExpanded || visibleThreads.length < threads.length)) {
               const overflow = document.createElement('li');
               overflow.className = 'workspace-thread-overflow';
               overflow.appendChild(createSidebarOverflowButton(
-                sidebarOverflowLabel(threads.length, threadListExpanded, '条项目会话'),
+                projectThreadOverflowLabel(threads.length, visibleThreads.length, threadListExpanded),
                 () => toggleProjectThreadListExpanded(p.workdir)
               ));
               threadList.appendChild(overflow);
@@ -3978,6 +4004,65 @@ const CLIENT_BUILD = '20260706-manual-projects';
         });
         projectsEl.appendChild(categoryList);
         exposeDebugState();
+      }
+      async function createProjectFolder(parentPath = '') {
+        const parent = String(parentPath || currentProjectRootPath || currentWorkdir || projectPathInput.value || '').trim();
+        if (!parent) {
+          await openProjectModal();
+          return;
+        }
+        const name = window.prompt(`新建项目文件夹\n位置：${parent}`, '新项目');
+        if (name == null) return;
+        const trimmed = name.trim();
+        if (!trimmed) {
+          addSystem('项目名称不能为空。', true);
+          return;
+        }
+        try {
+          const response = await fetch('/project/create', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ parentPath: parent, name: trimmed }) });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+          restoreWorkspaceRoot(data.path || data.workdir);
+          currentProjectRootPath = data.root?.path || data.workdir || data.path || currentProjectRootPath;
+          currentWorkdir = data.workdir || data.path || currentWorkdir;
+          resetToEmptyProjectSession(currentWorkdir, '新建项目');
+          closeMobileSidebar();
+          await Promise.all([loadSessions(), loadProjects()]);
+        } catch (error) {
+          addSystem(`新建项目失败：${error.message || error}`, true);
+        }
+      }
+      async function renameProjectFolder(project) {
+        const oldPath = String(project?.workdir || '').trim();
+        if (!oldPath) return;
+        const name = window.prompt('重命名项目文件夹', projectDisplayName(oldPath));
+        if (name == null) return;
+        const trimmed = name.trim();
+        if (!trimmed) {
+          addSystem('项目名称不能为空。', true);
+          return;
+        }
+        try {
+          const response = await fetch('/project/rename', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ path: oldPath, name: trimmed }) });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+          const newPath = data.workdir || data.path || oldPath;
+          const oldKey = normalizeSessionPath(oldPath);
+          const newKey = normalizeSessionPath(newPath);
+          if (expandedProjectPaths.delete(oldKey)) expandedProjectPaths.add(newKey);
+          if (expandedProjectThreadLists.delete(oldKey)) expandedProjectThreadLists.add(newKey);
+          hiddenProjectPaths.delete(oldKey);
+          saveExpandedProjectPaths();
+          saveHiddenProjectPaths();
+          if (sameProjectPath(currentProjectRootPath, oldPath)) currentProjectRootPath = data.root?.path || newPath;
+          if (sameProjectPath(currentWorkdir, oldPath)) {
+            currentWorkdir = newPath;
+            updateComposerContext();
+          }
+          await Promise.all([loadSessions(), loadProjects()]);
+        } catch (error) {
+          addSystem(`重命名项目失败：${error.message || error}`, true);
+        }
       }
       async function openProjectFolder(workdir) {
         const target = String(workdir || '').trim();
@@ -4919,6 +5004,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
       mobileSidebarBtn.addEventListener('click', openMobileSidebar);
       sidebarBackdrop.addEventListener('click', closeMobileSidebar);
       openFolderBtn.addEventListener('click', () => openProjectModal());
+      createProjectBtn.addEventListener('click', () => createProjectFolder());
       restoreHistoryBtn?.addEventListener('click', openRecycleRestoreDialog);
       openAccountBtn?.addEventListener('click', () => openAccountPanel().catch((error) => setAccountStatus(`账号面板打开失败：${error.message || error}`, true)));
       skillsTabPlugins.addEventListener('click', () => { skillsState.activeTab = 'plugins'; skillsState.managerOpen = false; renderSkillsPanel(); });
