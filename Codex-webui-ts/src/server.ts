@@ -61,7 +61,7 @@ const TOKEN = process.env.WEBUI_TOKEN || '';
 const PUBLIC_AUTH_USER = process.env.CODEX_WEBUI_PUBLIC_USER || 'lop';
 const PUBLIC_AUTH_PASSWORD = process.env.CODEX_WEBUI_PUBLIC_PASSWORD || '';
 const ALLOW_ORIGIN = process.env.ALLOW_ORIGIN || `http://localhost:${PORT}`;
-const UI_BUILD = '20260706-manual-projects';
+const UI_BUILD = '20260706-project-actions';
 const STATIC_ASSETS = ['index.html', 'css/app.css', 'js/app.js', 'js/transfer.js'];
 const UPLOAD_DIR = process.env.CODEX_WEBUI_UPLOADS ? path.resolve(process.env.CODEX_WEBUI_UPLOADS) : path.resolve(process.cwd(), 'uploads');
 const SESSIONS_ROOT = path.join(os.homedir(), '.codex', 'sessions');
@@ -313,6 +313,27 @@ function resolveOpenTarget(value: unknown): OpenTarget | null {
     if (stat.isDirectory()) return { path: resolved, kind: 'directory' };
   }
   return null;
+}
+
+function normalizeProjectFolderName(value: unknown): string {
+  const name = String(value || '').trim();
+  if (!name) throw new Error('Project folder name is required');
+  if (name === '.' || name === '..' || /[<>:"/\\|?*\x00-\x1f]/.test(name)) throw new Error('Invalid project folder name');
+  if (/[. ]$/.test(name)) throw new Error('Invalid project folder name');
+  const reserved = new Set([
+    'CON', 'PRN', 'AUX', 'NUL',
+    ...Array.from({ length: 9 }, (_, i) => `COM${i + 1}`),
+    ...Array.from({ length: 9 }, (_, i) => `LPT${i + 1}`)
+  ]);
+  if (reserved.has(name.split('.')[0].toUpperCase())) throw new Error('Invalid project folder name');
+  return name;
+}
+
+function childProjectPath(parentPath: string, name: string): string {
+  const target = path.resolve(parentPath, name);
+  const relative = path.relative(path.resolve(parentPath), target);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Invalid project folder name');
+  return target;
 }
 
 function stripWindowsNamespacePrefix(value: string): string {
@@ -661,6 +682,39 @@ function validHistoryRoots(history: History): ProjectRoot[] {
 function isWithinProjectRoot(workdir: string, rootPath: string): boolean {
   const relative = path.relative(path.resolve(rootPath), path.resolve(workdir));
   return relative === '' || Boolean(relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function rebasePathInsideRoot(value: string, oldRoot: string, newRoot: string): string {
+  const relative = path.relative(path.resolve(oldRoot), path.resolve(value));
+  return relative ? path.resolve(newRoot, relative) : path.resolve(newRoot);
+}
+
+function rewriteProjectRootPath(history: History, oldPath: string, newPath: string): ProjectRoot {
+  const oldRoot = path.resolve(oldPath);
+  const nextRoot = path.resolve(newPath);
+  const oldId = projectRootId(oldRoot);
+  const nextId = projectRootId(nextRoot);
+  const now = Date.now();
+  let touchedRoot = false;
+  history.roots = (history.roots || [])
+    .filter((root) => root && typeof root.path === 'string')
+    .map((root) => {
+      const rootPath = path.resolve(root.path);
+      if (projectRootId(rootPath) !== oldId) return root;
+      touchedRoot = true;
+      return { id: nextId, name: basenameForDirectory(nextRoot), path: nextRoot, last_used: now };
+    })
+    .filter((root, index, roots) => roots.findIndex((candidate) => projectRootId(candidate.path) === projectRootId(root.path)) === index);
+  if (!touchedRoot) {
+    history.roots = [{ id: nextId, name: basenameForDirectory(nextRoot), path: nextRoot, last_used: now }, ...(history.roots || [])];
+  }
+  history.entries = (history.entries || []).map((entry) => {
+    if (!entry || typeof entry.workdir !== 'string' || !isWithinProjectRoot(entry.workdir, oldRoot)) return entry;
+    return { ...entry, workdir: rebasePathInsideRoot(entry.workdir, oldRoot, nextRoot) };
+  });
+  if (!history.selectedRootId || history.selectedRootId === oldId) history.selectedRootId = nextId;
+  return (history.roots || []).find((root) => projectRootId(root.path) === nextId)
+    || { id: nextId, name: basenameForDirectory(nextRoot), path: nextRoot, last_used: now };
 }
 
 function projectRootForWorkdir(workdir: string | null | undefined, roots: ProjectRoot[]): string {
