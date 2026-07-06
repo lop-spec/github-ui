@@ -1112,8 +1112,8 @@ export class CodexService extends EventEmitter {
   }
 
   private shutdownAppServer(): void {
-    // The app-server is a separate 5056 process. WebUI stop/restart only
-    // disconnects this client so active Codex work is not killed with 5055.
+    // The app-server is a separate 5156 process. WebUI stop/restart only
+    // disconnects this client so active Codex work is not killed with 5155.
     this.appServer?.shutdown();
     this.appServer = null;
     this.appServerStarting = null;
