@@ -18,6 +18,7 @@ const CLIENT_BUILD = '20260706-transfer-merge';
       const pinnedSessionsEl = $('pinnedSessions');
       const projectsEl = $('projects');
       const openFolderBtn = $('openFolderBtn');
+      const restoreHistoryBtn = $('restoreHistoryBtn');
       const openAccountBtn = $('openAccountBtn');
       const historyBackBtn = $('historyBackBtn');
       const historyForwardBtn = $('historyForwardBtn');
@@ -325,6 +326,7 @@ const CLIENT_BUILD = '20260706-transfer-merge';
           workspaceThreadItems: document.querySelectorAll('.workspace-thread-item').length,
           workspaceRootMenus: document.querySelectorAll('.workspace-root-menu').length,
           workspaceCleanupOpen: Boolean(document.getElementById('workspaceCleanupModal')),
+          recycleRestoreOpen: Boolean(document.getElementById('recycleRestoreModal')),
           hiddenProjectRoots: hiddenProjectPaths.size,
           expandedProjectCategories: expandedProjectCategories.size,
           expandedProjectThreadLists: expandedProjectThreadLists.size,
@@ -493,6 +495,7 @@ const CLIENT_BUILD = '20260706-transfer-merge';
         { id:'review', description:'对当前改动发起 Review。', flavor:'official', action:'startReview', meta:'Official', requiresThread:true, supportsInlineArgs:true },
         { id:'status', description:'查看当前会话配置与 token 使用情况。', flavor:'official', action:'showStatus', meta:'Local', availableDuringTask:true },
         { id:'debug-config', description:'查看配置层与来源。', flavor:'official', action:'showDebugConfig', meta:'Local', availableDuringTask:true },
+        { id:'diff', description:'显示当前工作区 diff。', flavor:'official', action:'showDiff', meta:'Local', requiresWorkspace:true, availableDuringTask:true },
         { id:'goal', description:'设置或查看长任务目标。', flavor:'official', action:'threadGoal', meta:'Official', requiresThread:true, supportsInlineArgs:true, availableDuringTask:true },
         { id:'compact', description:'压缩当前线程上下文。', flavor:'official', action:'compactThread', meta:'Official', requiresThread:true, availableDuringTask:false },
         { id:'fork', description:'从当前线程创建分支线程。', flavor:'official', action:'forkThread', meta:'Official', requiresThread:true, availableDuringTask:false },
@@ -1320,9 +1323,7 @@ const CLIENT_BUILD = '20260706-transfer-merge';
         renderGitPanel();
       }
       async function openGitPanel() {
-        const modal = $('git' + 'Modal');
-        if (!modal) return;
-        openModal(modal.id);
+        openModal('gitModal');
         await loadGitPanel(gitPanelState.scope);
       }
       async function runGitPathAction(endpoint, extra = {}) {
@@ -1414,9 +1415,7 @@ const CLIENT_BUILD = '20260706-transfer-merge';
         renderTerminalPanel();
       }
       async function openTerminalPanel() {
-        const modal = $('terminal' + 'Modal');
-        if (!modal) return;
-        openModal(modal.id);
+        openModal('terminalModal');
         await loadTerminalSessions();
         if (!terminalState.pollTimer) {
           terminalState.pollTimer = setInterval(() => {
@@ -1512,6 +1511,18 @@ const CLIENT_BUILD = '20260706-transfer-merge';
         if (data?.kind === 'website' && data.url) {
           window.open(data.url, '_blank', 'noopener');
         }
+      }
+      async function showGitDiff() {
+        await openGitPanel();
+        const data = await fetchJsonEndpoint('/git/diff');
+        if (!data.isRepo) {
+          addSystem(`Git：当前工作区不是 Git 仓库。\n${data.workdir || currentWorkdir}\n${data.error || ''}`.trim(), true);
+          return;
+        }
+        const files = (data.files || []).slice(0, 40).map((file) => [file.status, file.path]);
+        const table = files.length ? markdownTable(['状态', '文件'], files) : '当前没有未提交文件。';
+        const diff = data.diff ? `\n\n\`\`\`diff\n${data.diff}\n\`\`\`` : '';
+        addBubble(`Git 状态\n\n分支：${data.branch || '(detached)'}\n仓库：${data.root}\n\n${table}${diff}`, 'agent');
       }
       function setSkillsActionError(message = '') {
         if (!skillsActionError) return;
@@ -2084,6 +2095,10 @@ const CLIENT_BUILD = '20260706-transfer-merge';
         if (item.action === 'showDebugConfig') {
           await loadConfig();
           addBubble('```json\n' + JSON.stringify(currentConfig, null, 2) + '\n```', 'agent');
+          return;
+        }
+        if (item.action === 'showDiff') {
+          await showGitDiff();
           return;
         }
         if (item.action === 'initAgents') {
@@ -3477,6 +3492,131 @@ const CLIENT_BUILD = '20260706-transfer-merge';
         render();
         exposeDebugState();
       }
+      function removeRecycleRestoreDialog() {
+        document.getElementById('recycleRestoreModal')?.remove();
+        exposeDebugState();
+      }
+      function recycleRestoreTime(item) {
+        return Number(item?.sessionTime || item?.mtimeMs || 0) || Date.now();
+      }
+      function renderRecycleRestoreItems(state) {
+        if (state.loading) {
+          return '<div class="recycle-restore-empty">正在读取 Codex_RECYCLE...</div>';
+        }
+        if (state.error) {
+          return `<div class="recycle-restore-error">${escapeHtml(state.error)}</div>`;
+        }
+        if (!state.items.length) {
+          return '<div class="recycle-restore-empty">近 1 天没有可恢复的历史对话</div>';
+        }
+        return state.items.map((item) => {
+          const restoring = state.restoringPath && normalizeSessionPath(state.restoringPath) === normalizeSessionPath(item.recycledPath);
+          return `
+            <article class="recycle-restore-item">
+              <div class="recycle-restore-copy">
+                <div class="recycle-restore-title">${escapeHtml(item.title || item.name || '历史对话')}</div>
+                <div class="recycle-restore-summary">${escapeHtml(item.summary || '未提取到最新回复')}</div>
+                <div class="recycle-restore-meta">
+                  <span>${escapeHtml(relativeTime(recycleRestoreTime(item)))}</span>
+                  <span>${escapeHtml(item.bucket || '')}</span>
+                  <span title="${escapeAttr(item.recycledPath || '')}">${escapeHtml(item.name || '')}</span>
+                </div>
+              </div>
+              <button class="primary recycle-restore-action" data-action="restore-recycled-session" data-path="${escapeAttr(item.recycledPath || '')}" ${restoring ? 'disabled' : ''}>${restoring ? '恢复中...' : '恢复'}</button>
+            </article>`;
+        }).join('');
+      }
+      function renderRecycleRestoreDialog(overlay, state) {
+        overlay.innerHTML = `
+          <div class="dialog recycle-restore-dialog" role="dialog" aria-modal="true" aria-label="恢复历史对话">
+            <div class="dialog-head">
+              <div>
+                <strong>恢复历史对话</strong>
+                <div class="recycle-restore-headline">默认读取近 1 天 Codex_RECYCLE，并恢复到历史对话项目</div>
+              </div>
+              <button class="icon-btn" data-action="close-recycle-restore" aria-label="关闭">×</button>
+            </div>
+            <div class="dialog-body">
+              <div class="recycle-restore-summary-card">
+                <span>目标项目</span>
+                <strong>${escapeHtml(state.historyProject?.name || '历史对话')}</strong>
+                <small title="${escapeAttr(state.historyProject?.path || '')}">${escapeHtml(state.historyProject?.path || '等待服务端创建')}</small>
+              </div>
+              <div class="recycle-restore-list">${renderRecycleRestoreItems(state)}</div>
+            </div>
+            <div class="dialog-foot">
+              <button class="ghost-btn" data-action="refresh-recycle-restore" ${state.loading ? 'disabled' : ''}>刷新</button>
+              <button class="ghost-btn" data-action="close-recycle-restore">关闭</button>
+            </div>
+          </div>`;
+        exposeDebugState();
+      }
+      async function loadRecycleRestoreCandidates(state, overlay) {
+        state.loading = true;
+        state.error = '';
+        renderRecycleRestoreDialog(overlay, state);
+        try {
+          const response = await fetch('/session/recycle-candidates?days=1', { cache: 'no-store' });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+          state.items = Array.isArray(data.items) ? data.items : [];
+          state.historyProject = data.historyProject || state.historyProject;
+        } catch (error) {
+          state.error = `读取回收区失败：${error.message || error}`;
+        } finally {
+          state.loading = false;
+          renderRecycleRestoreDialog(overlay, state);
+        }
+      }
+      async function restoreRecycledSessionFromDialog(state, overlay, recycledPath) {
+        const target = state.items.find((item) => sameSessionPath(item.recycledPath, recycledPath));
+        if (!target || state.restoringPath) return;
+        state.restoringPath = target.recycledPath;
+        state.error = '';
+        renderRecycleRestoreDialog(overlay, state);
+        try {
+          const response = await fetch('/session/restore', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ recycledPath: target.recycledPath }) });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+          state.historyProject = data.historyProject || state.historyProject;
+          state.items = state.items.filter((item) => !sameSessionPath(item.recycledPath, target.recycledPath));
+          addSystem(`已恢复到历史对话：${target.title || target.name || '历史对话'}`);
+          await Promise.all([loadSessions(), loadProjects()]);
+        } catch (error) {
+          state.error = `恢复失败：${error.message || error}`;
+        } finally {
+          state.restoringPath = '';
+          renderRecycleRestoreDialog(overlay, state);
+        }
+      }
+      function openRecycleRestoreDialog() {
+        removeRecycleRestoreDialog();
+        const overlay = document.createElement('div');
+        overlay.className = 'modal open recycle-restore-modal';
+        overlay.id = 'recycleRestoreModal';
+        document.body.appendChild(overlay);
+        const state = { loading: true, error: '', items: [], historyProject: null, restoringPath: '' };
+        overlay.addEventListener('click', (event) => {
+          if (event.target === overlay) removeRecycleRestoreDialog();
+        });
+        overlay.addEventListener('click', async (event) => {
+          const actionTarget = event.target && event.target.closest ? event.target.closest('[data-action]') : null;
+          const action = actionTarget?.getAttribute('data-action') || '';
+          if (!action) return;
+          if (action === 'close-recycle-restore') {
+            removeRecycleRestoreDialog();
+            return;
+          }
+          if (action === 'refresh-recycle-restore') {
+            await loadRecycleRestoreCandidates(state, overlay);
+            return;
+          }
+          if (action === 'restore-recycled-session') {
+            await restoreRecycledSessionFromDialog(state, overlay, actionTarget.getAttribute('data-path') || '');
+          }
+        });
+        loadRecycleRestoreCandidates(state, overlay);
+      }
       function showWorkspaceRootMenu(x, y, project) {
         closeContextMenu();
         const menu = document.createElement('div');
@@ -4655,6 +4795,7 @@ const CLIENT_BUILD = '20260706-transfer-merge';
       mobileSidebarBtn.addEventListener('click', openMobileSidebar);
       sidebarBackdrop.addEventListener('click', closeMobileSidebar);
       openFolderBtn.addEventListener('click', () => openProjectModal());
+      restoreHistoryBtn?.addEventListener('click', openRecycleRestoreDialog);
       openAccountBtn?.addEventListener('click', () => openAccountPanel().catch((error) => setAccountStatus(`账号面板打开失败：${error.message || error}`, true)));
       skillsTabPlugins.addEventListener('click', () => { skillsState.activeTab = 'plugins'; skillsState.managerOpen = false; renderSkillsPanel(); });
       skillsTabInstalled.addEventListener('click', () => { skillsState.activeTab = 'skills'; skillsState.managerOpen = false; renderSkillsPanel(); });
@@ -4701,30 +4842,30 @@ const CLIENT_BUILD = '20260706-transfer-merge';
           });
         }
       });
-      terminalSpawnBtn?.addEventListener('click', () => spawnTerminal().catch((error) => setTerminalStatus(`终端创建失败：${error.message || error}`, true)));
-      terminalRefreshBtn?.addEventListener('click', () => loadTerminalSessions().catch((error) => setTerminalStatus(`终端刷新失败：${error.message || error}`, true)));
-      terminalKillBtn?.addEventListener('click', () => killActiveTerminal().catch((error) => setTerminalStatus(`终端结束失败：${error.message || error}`, true)));
-      terminalSendInputBtn?.addEventListener('click', () => sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true)));
-      terminalStdinInput?.addEventListener('keydown', (event) => {
+      terminalSpawnBtn.addEventListener('click', () => spawnTerminal().catch((error) => setTerminalStatus(`终端创建失败：${error.message || error}`, true)));
+      terminalRefreshBtn.addEventListener('click', () => loadTerminalSessions().catch((error) => setTerminalStatus(`终端刷新失败：${error.message || error}`, true)));
+      terminalKillBtn.addEventListener('click', () => killActiveTerminal().catch((error) => setTerminalStatus(`终端结束失败：${error.message || error}`, true)));
+      terminalSendInputBtn.addEventListener('click', () => sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true)));
+      terminalStdinInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
           sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true));
         }
       });
-      gitRefreshBtn?.addEventListener('click', () => loadGitPanel(gitPanelState.scope).catch((error) => setGitStatusLine(`Git 刷新失败：${error.message || error}`, true)));
-      gitOpenRepoBtn?.addEventListener('click', () => {
+      gitRefreshBtn.addEventListener('click', () => loadGitPanel(gitPanelState.scope).catch((error) => setGitStatusLine(`Git 刷新失败：${error.message || error}`, true)));
+      gitOpenRepoBtn.addEventListener('click', () => {
         const repo = gitPanelState.status?.repoRoot || gitPanelState.status?.root || currentWorkdir;
         if (repo) openLocalPath(repo);
       });
-      gitScopeUnstaged?.addEventListener('click', () => loadGitPanel('unstaged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
-      gitScopeStaged?.addEventListener('click', () => loadGitPanel('staged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
-      gitStageSelected?.addEventListener('click', () => runGitPathAction('/git/stage').catch((error) => setGitStatusLine(`暂存失败：${error.message || error}`, true)));
-      gitUnstageSelected?.addEventListener('click', () => runGitPathAction('/git/unstage').catch((error) => setGitStatusLine(`取消暂存失败：${error.message || error}`, true)));
-      gitDiscardSelected?.addEventListener('click', () => discardSelectedGitChanges().catch((error) => setGitStatusLine(`丢弃失败：${error.message || error}`, true)));
-      gitCommitBtn?.addEventListener('click', () => commitGitChanges().catch((error) => setGitStatusLine(`提交失败：${error.message || error}`, true)));
-      gitPullBtn?.addEventListener('click', () => pullGitChanges().catch((error) => setGitStatusLine(`拉取失败：${error.message || error}`, true)));
-      gitPushBtn?.addEventListener('click', () => pushGitChanges().catch((error) => setGitStatusLine(`推送失败：${error.message || error}`, true)));
-      gitBranchCreate?.addEventListener('click', () => createGitBranch().catch((error) => setGitStatusLine(`创建分支失败：${error.message || error}`, true)));
+      gitScopeUnstaged.addEventListener('click', () => loadGitPanel('unstaged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
+      gitScopeStaged.addEventListener('click', () => loadGitPanel('staged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
+      gitStageSelected.addEventListener('click', () => runGitPathAction('/git/stage').catch((error) => setGitStatusLine(`暂存失败：${error.message || error}`, true)));
+      gitUnstageSelected.addEventListener('click', () => runGitPathAction('/git/unstage').catch((error) => setGitStatusLine(`取消暂存失败：${error.message || error}`, true)));
+      gitDiscardSelected.addEventListener('click', () => discardSelectedGitChanges().catch((error) => setGitStatusLine(`丢弃失败：${error.message || error}`, true)));
+      gitCommitBtn.addEventListener('click', () => commitGitChanges().catch((error) => setGitStatusLine(`提交失败：${error.message || error}`, true)));
+      gitPullBtn.addEventListener('click', () => pullGitChanges().catch((error) => setGitStatusLine(`拉取失败：${error.message || error}`, true)));
+      gitPushBtn.addEventListener('click', () => pushGitChanges().catch((error) => setGitStatusLine(`推送失败：${error.message || error}`, true)));
+      gitBranchCreate.addEventListener('click', () => createGitBranch().catch((error) => setGitStatusLine(`创建分支失败：${error.message || error}`, true)));
       projectOpenConfirm.addEventListener('click', () => openProjectFolder(projectPathInput.value));
       projectPickFolder.addEventListener('click', pickProjectFolder);
       projectBrowseUp.addEventListener('click', () => {
