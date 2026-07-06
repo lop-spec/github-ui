@@ -17,8 +17,8 @@
 - `findstr` 只用于单词级简单过滤；多词、中文、标点、正则、括号和路径有空格时，改用 `rg -F`、`rg -e`、pattern 文件或脚本探针。
 - 大复制优先 `robocopy`；超大枚举或结构化管道必须优先用 `nu`。
 - `cmd` 中禁止使用 PowerShell 语法如 `$ts=...`、`$(...)`、对象管道和反引号转义；需要时间戳用纯 cmd 语法、固定文件名或临时脚本。
-- `node -e`、`python -c`、JSON、HTML、正则和多行逻辑只允许无内层引号、无模板字符串、无路径、无中文、无 shell 元字符的短表达式；只要 JS/Python 代码本身需要字符串字面量、模板字符串、JSON/HTML/正则、路径、中文、多语句或换行，必须改临时 `.mjs`/`.py` 加 argv/文件输入，不能继续硬拼一行。
-- 在 `exec_command(shell="cmd")` 等外层还会解析引号的场景，`node -e`/`python -c` 第一次出现拆引号、`SyntaxError`、`os error 123`、参数被拆或搜索词被当文件名时，立即停止内联，写临时脚本、pattern 文件或参数文件后用 `cmd` 执行；禁止为了省一步继续二次、三次堆转义。
+- `node -e`、`python -c`、JSON、HTML、正则和多行逻辑只允许无内层引号、无模板字符串、无路径、无中文、无 shell 元字符、输出不要求引号保真的短表达式；只要 JS/Python 代码或输出需要字符串字面量、模板字符串、JSON/HTML/正则、Markdown、代码片段、路径、中文、多语句、换行或原样引号，必须改临时 `.mjs`/`.py` 加 argv/文件输入，不能继续硬拼一行。
+- 在 `exec_command(shell="cmd")` 等外层还会解析引号的场景，`node -e`/`python -c` 第一次出现拆引号、输出引号丢失/错位、`SyntaxError`、`os error 123`、参数被拆或搜索词被当文件名时，立即停止内联，写临时脚本、pattern 文件或参数文件后用 `cmd` 执行；禁止为了省一步继续二次、三次堆转义。
 - Windows 下从 Node/脚本启动 `.cmd` wrapper 易受 spawn/引号影响；能定位到真实 JS/EXE 入口就直调入口，必须跑 `.cmd`/`npm` 时用 shell 模式或显式 `cmd.exe /d /s /c`。
 - 当前 `exec_command(shell="cmd")` 中，路径不含空格且命令扁平时可不加引号；路径含空格或参数需要引号时，进入复杂 wrapper/参数文件模板，不能把引号当字面量传给 `rg/python/nu` 导致 `os error 123`。
 - `nu`/`nush` 一律按 Nushell 处理：优先用 `C:\Users\lop\AppData\Local\Programs\nu\bin\nu.exe --no-config-file --no-history --no-std-lib -c "..."`；脚本内路径用正斜杠和单引号，外部命令加 `^`，丢弃输出用 `| ignore`，避免把 `>nul`、`%VAR%`、`&&`、`||` 等 cmd 语法塞进 nu。
