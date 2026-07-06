@@ -482,6 +482,7 @@ function recycledSessionCandidate(info: RecycledSessionPathInfo, stat: fs.Stats)
   const latestAssistant = [...messages].reverse().find((message) => message.role === 'assistant' && message.text);
   const latestUser = [...messages].reverse().find((message) => message.role === 'user' && message.text);
   const sessionTime = rolloutTimestampMs(info.recycledPath) || stat.mtimeMs;
+  const archiveTime = stat.mtimeMs;
   return {
     recycledPath: info.recycledPath,
     targetPath: uniquePath(info.targetBasePath),
@@ -493,14 +494,30 @@ function recycledSessionCandidate(info: RecycledSessionPathInfo, stat: fs.Stats)
     latestReply: trimTextForList(latestAssistant?.text || '', 500),
     messageCount: messages.length,
     sessionTime,
+    archiveTime,
     mtimeMs: stat.mtimeMs,
     size: stat.size
   };
 }
 
-function listRecycledSessionCandidates(days = 1, limit = 80) {
+function recycleCandidateMatchesQuery(candidate: ReturnType<typeof recycledSessionCandidate>, query: string): boolean {
+  const terms = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const haystack = [
+    candidate.title,
+    candidate.summary,
+    candidate.latestReply,
+    candidate.name,
+    candidate.relativeSessionPath,
+    candidate.recycledPath,
+    candidate.bucket
+  ].join(' ').toLowerCase();
+  return terms.every((term) => haystack.includes(term));
+}
+
+function listRecycledSessionCandidates(days = 1, limit = 200, query = '') {
   const boundedDays = Math.max(1, Math.min(30, Number(days) || 1));
-  const boundedLimit = Math.max(1, Math.min(200, Number(limit) || 80));
+  const boundedLimit = Math.max(1, Math.min(500, Number(limit) || 200));
   const cutoff = Date.now() - boundedDays * 24 * 60 * 60 * 1000;
   const out: ReturnType<typeof recycledSessionCandidate>[] = [];
   let buckets: fs.Dirent[] = [];
@@ -524,13 +541,14 @@ function listRecycledSessionCandidates(days = 1, limit = 80) {
         if (!info) continue;
         let stat: fs.Stats;
         try { stat = fs.statSync(full); } catch { continue; }
-        const sessionTime = rolloutTimestampMs(full) || stat.mtimeMs;
-        if (sessionTime < cutoff) continue;
-        out.push(recycledSessionCandidate(info, stat));
+        if (stat.mtimeMs < cutoff) continue;
+        const candidate = recycledSessionCandidate(info, stat);
+        if (!recycleCandidateMatchesQuery(candidate, query)) continue;
+        out.push(candidate);
       }
     }
   }
-  out.sort((a, b) => (b.sessionTime || b.mtimeMs || 0) - (a.sessionTime || a.mtimeMs || 0));
+  out.sort((a, b) => (b.archiveTime || b.mtimeMs || 0) - (a.archiveTime || a.mtimeMs || 0));
   return out.slice(0, boundedLimit);
 }
 
@@ -1536,16 +1554,20 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && url === '/session/recycle-candidates') {
     if (!requireAuth(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
     const days = Number(parsedUrl.searchParams.get('days') || 1);
-    const limit = Number(parsedUrl.searchParams.get('limit') || 80);
+    const limit = Number(parsedUrl.searchParams.get('limit') || 200);
+    const query = parsedUrl.searchParams.get('q') || parsedUrl.searchParams.get('query') || '';
     const h = readHistory();
     const root = ensureHistoryProject(h);
     writeHistory(h);
+    const items = listRecycledSessionCandidates(days, limit, query);
     return sendJson(res, 200, {
       ok: true,
       days: Math.max(1, Math.min(30, Number(days) || 1)),
+      query: String(query || '').trim(),
+      total: items.length,
       recycleRoot: SESSION_RECYCLE_ROOT,
       historyProject: root,
-      items: listRecycledSessionCandidates(days, limit)
+      items
     });
   }
 
