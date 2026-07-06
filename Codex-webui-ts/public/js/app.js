@@ -1048,7 +1048,8 @@ const CLIENT_BUILD = '20260706-project-window';
         return nestedPayload(status?.account, 'account') || {};
       }
       function rateLimitsPayload(status) {
-        return nestedPayload(status?.rateLimits, 'rateLimits') || {};
+        const payload = nestedPayload(status?.rateLimits, 'rateLimits');
+        return payload && payload.ok === false ? null : payload;
       }
       function usageSummaryPayload(status) {
         const usage = status?.usage || {};
@@ -1069,90 +1070,155 @@ const CLIENT_BUILD = '20260706-project-window';
       function formatWindowDuration(minutes) {
         const value = Number(minutes);
         if (!Number.isFinite(value) || value <= 0) return '';
-        if (value < 60) return `${Math.round(value)} 分钟窗口`;
-        if (value < 60 * 24) return `${Math.round(value / 60)} 小时窗口`;
-        return `${Math.round(value / 60 / 24)} 天窗口`;
+        if (value % (24 * 60) === 0) return formatRelativeUnit(value / (24 * 60), 'day');
+        if (value % 60 === 0) return formatRelativeUnit(value / 60, 'hour');
+        return formatRelativeUnit(value, 'minute');
+      }
+      function formatRelativeUnit(value, unit) {
+        const rounded = Math.round(Number(value) || 0);
+        return `${rounded} ${unit}${rounded === 1 ? '' : 's'}`;
       }
       function formatResetTime(value) {
-        if (!value) return '';
-        const date = new Date(value);
-        if (!Number.isFinite(date.getTime())) return '';
-        const diffMs = date.getTime() - Date.now();
-        const absMinutes = Math.max(1, Math.round(Math.abs(diffMs) / 60000));
-        const suffix = diffMs >= 0 ? '后重置' : '前已重置';
-        if (absMinutes < 60) return `${absMinutes} 分钟${suffix}`;
-        const absHours = Math.round(absMinutes / 60);
-        if (absHours < 48) return `${absHours} 小时${suffix}`;
-        return `${Math.round(absHours / 24)} 天${suffix}`;
+        if (value === null || value === undefined || value === '') return 'Unknown';
+        const numericValue = Number(value);
+        const resetMs = Number.isFinite(numericValue)
+          ? (numericValue > 100000000000 ? numericValue : numericValue * 1000)
+          : Date.parse(String(value));
+        if (!Number.isFinite(resetMs)) return 'Unknown';
+        const diffSeconds = Math.floor((resetMs - Date.now()) / 1000);
+        if (diffSeconds <= 0) return 'Unknown';
+        if (diffSeconds < 60) return formatRelativeUnit(diffSeconds, 'second');
+        const diffMinutes = Math.floor(diffSeconds / 60);
+        if (diffMinutes < 60) return formatRelativeUnit(diffMinutes, 'minute');
+        const diffHours = Math.floor(diffMinutes / 60);
+        if (diffHours < 24) return formatRelativeUnit(diffHours, 'hour');
+        return formatRelativeUnit(Math.floor(diffHours / 24), 'day');
       }
       function limitCaption(limit) {
-        const pieces = [formatResetTime(limit?.resetsAt), formatWindowDuration(limit?.windowDurationMins)].filter(Boolean);
-        return pieces.join(' · ');
+        const resetLabel = formatResetTime(limit?.resetsAt ?? null);
+        if (resetLabel === 'Unknown') return 'Unknown';
+        const resetText = `Resets in ${resetLabel}`;
+        const windowDuration = formatWindowDuration(limit?.windowDurationMins);
+        return windowDuration ? `${resetText} (${windowDuration} window)` : resetText;
       }
-      function buildAccountLimitCards(rateLimits) {
+      function buildLimitCard(window, showRemaining, type, isUnlimited) {
+        const percent = clampPercent(showRemaining ? 100 - Number(window?.usedPercent || 0) : Number(window?.usedPercent || 0));
+        const label = type === 'session'
+          ? (showRemaining ? 'Session left' : 'Session usage')
+          : (showRemaining ? 'Weekly left' : 'Weekly usage');
+        return {
+          id: type,
+          label,
+          value: isUnlimited ? 'Unlimited' : `${percent}%`,
+          percent,
+          caption: limitCaption(window || {}),
+          badge: isUnlimited ? 'Unlimited' : ''
+        };
+      }
+      function buildAccountLimitCards(rateLimits, showRemaining = true) {
+        if (!rateLimits) return [];
         const cards = [];
         if (rateLimits?.primary) {
-          const remaining = clampPercent(100 - Number(rateLimits.primary.usedPercent || 0));
-          cards.push({
-            id: 'primary',
-            title: 'Session remaining',
-            value: `${remaining}%`,
-            percent: remaining,
-            caption: limitCaption(rateLimits.primary)
-          });
+          cards.push(buildLimitCard(rateLimits.primary, showRemaining, 'session', rateLimits.credits?.unlimited));
         }
         if (rateLimits?.secondary) {
-          const remaining = clampPercent(100 - Number(rateLimits.secondary.usedPercent || 0));
-          cards.push({
-            id: 'secondary',
-            title: 'Weekly remaining',
-            value: `${remaining}%`,
-            percent: remaining,
-            caption: limitCaption(rateLimits.secondary)
-          });
+          cards.push(buildLimitCard(rateLimits.secondary, showRemaining, 'weekly', rateLimits.credits?.unlimited));
         }
-        if (rateLimits?.credits) {
-          const credits = rateLimits.credits || {};
+        if (rateLimits.credits?.hasCredits && rateLimits.credits.balance) {
           cards.push({
             id: 'credits',
-            title: 'Credits balance',
-            value: credits.unlimited ? 'Unlimited' : String(credits.balance ?? 0),
-            percent: credits.unlimited ? 100 : (credits.hasCredits ? 100 : 0),
-            caption: credits.unlimited ? 'Unlimited credits' : (credits.hasCredits ? 'Credits available' : 'No credits available')
+            label: 'Credits balance',
+            value: String(rateLimits.credits.balance),
+            percent: rateLimits.credits.unlimited ? 100 : 0,
+            caption: '',
+            badge: rateLimits.credits.unlimited ? 'Unlimited' : ''
           });
         }
         return cards;
       }
+      function setAccountLimitsExpanded(expanded) {
+        accountLimitsExpanded = Boolean(expanded);
+        if (accountLimitsToggle) accountLimitsToggle.setAttribute('aria-expanded', accountLimitsExpanded ? 'true' : 'false');
+        if (accountLimitContent) accountLimitContent.hidden = !accountLimitsExpanded;
+      }
       function renderAccountLimitCards(rateLimits) {
+        const cards = buildAccountLimitCards(rateLimits, true);
+        if (accountLimitsSection) accountLimitsSection.hidden = !cards.length;
+        if (accountLimitsCaption) {
+          accountLimitsCaption.textContent = cards.length
+            ? cards.map((card) => `${card.label}: ${card.value}`).join(' · ')
+            : '当前账号未返回额度信息。';
+        }
         if (!accountLimitCards) return;
-        const cards = buildAccountLimitCards(rateLimits);
         if (!cards.length) {
-          accountLimitCards.innerHTML = '<div class="account-limit-card"><div class="account-limit-card-title">Account limits</div><div class="account-limit-card-caption">当前账号未返回额度信息。</div></div>';
+          accountLimitCards.innerHTML = '';
+          setAccountLimitsExpanded(false);
           return;
         }
+        setAccountLimitsExpanded(accountLimitsExpanded);
         accountLimitCards.innerHTML = cards.map((card) => `
           <article class="account-limit-card" data-limit-id="${escapeAttr(card.id)}">
-            <div class="account-limit-card-title">${escapeHtml(card.title)}</div>
-            <div class="account-limit-card-value">${escapeHtml(card.value)}</div>
-            <div class="account-limit-bar" aria-hidden="true"><span style="width:${clampPercent(card.percent)}%"></span></div>
-            <div class="account-limit-card-caption">${escapeHtml(card.caption || '')}</div>
+            <div class="account-limit-card-left">
+              <div class="account-limit-card-copy">
+                <div class="account-limit-card-label">${escapeHtml(card.label)}</div>
+                ${card.caption ? `<div class="account-limit-card-caption">${escapeHtml(card.caption)}</div>` : ''}
+              </div>
+              ${card.badge ? `<div class="account-limit-card-badge">${escapeHtml(card.badge)}</div>` : ''}
+            </div>
+            <div class="account-limit-card-right">
+              <div class="account-limit-card-value">${escapeHtml(card.value)}</div>
+            </div>
           </article>
         `).join('');
       }
       function renderAccountUsage(summary) {
         if (!accountUsageSummary) return;
         const items = [
-          ['Lifetime tokens', summary.lifetimeTokens],
-          ['Peak daily tokens', summary.peakDailyTokens],
-          ['Longest turn', summary.longestRunningTurnSec ? `${formatNumber(summary.longestRunningTurnSec)} 秒` : '0'],
-          ['Current streak', summary.currentStreakDays ? `${formatNumber(summary.currentStreakDays)} 天` : '0']
-        ];
+          ['Lifetime tokens', summary.lifetimeTokens, (value) => formatNumber(value)],
+          ['Peak daily tokens', summary.peakDailyTokens, (value) => formatNumber(value)],
+          ['Longest turn', summary.longestRunningTurnSec, (value) => `${formatNumber(value)} 秒`],
+          ['Current streak', summary.currentStreakDays, (value) => `${formatNumber(value)} 天`]
+        ].filter(([, value]) => value !== null && value !== undefined && value !== '');
+        if (accountUsageSection) accountUsageSection.hidden = !items.length;
+        if (!items.length) {
+          accountUsageSummary.innerHTML = '';
+          return;
+        }
         accountUsageSummary.innerHTML = items.map(([label, value]) => `
           <div class="account-usage-item">
             <span>${escapeHtml(label)}</span>
-            <strong>${escapeHtml(formatNumber(value ?? 0))}</strong>
+            <strong>${escapeHtml(arguments.length ? value : value)}</strong>
           </div>
         `).join('');
+      }
+      function accountViewModel(status) {
+        const accountResponse = status?.account || {};
+        const authResponse = status?.authStatus || {};
+        const account = accountPayload(status);
+        const accountError = accountResponse?.ok === false ? accountResponse.error || 'account/read failed' : '';
+        const authError = authResponse?.ok === false ? authResponse.error || 'getAuthStatus failed' : '';
+        const type = account.type || (authResponse.authMethod === 'chatgpt' ? 'chatgpt' : authResponse.authMethod || '');
+        const signedIn = type === 'chatgpt' || type === 'apiKey' || type === 'amazonBedrock' || authResponse.requiresOpenaiAuth === false;
+        const needsLogin = !signedIn && (accountResponse.requiresOpenaiAuth === true || authResponse.requiresOpenaiAuth === true);
+        const state = accountError || authError ? 'error' : signedIn ? 'authenticated' : needsLogin ? 'needs-login' : 'unknown';
+        const statusLabel = state === 'authenticated' ? '已登录' : state === 'needs-login' ? '需要登录' : state === 'error' ? '读取失败' : '未知';
+        const modeLabel = type === 'chatgpt' ? 'ChatGPT' : type === 'apiKey' ? 'API key' : type === 'amazonBedrock' ? 'Amazon Bedrock' : type || 'unknown';
+        const plan = account.planType || account.plan_type || 'unknown';
+        const title = account.email || (type === 'apiKey' ? 'API key account' : state === 'needs-login' ? '需要登录 ChatGPT' : statusLabel);
+        return {
+          title,
+          signedIn,
+          state,
+          statusLabel,
+          modeLabel,
+          plan,
+          error: accountError || authError,
+          meta: [
+            ['方式', modeLabel],
+            ['计划', plan],
+            ['认证', authResponse.authMethod || (signedIn ? modeLabel : 'none')]
+          ]
+        };
       }
       function redactAccountDetails(value) {
         const secretPattern = /(token|secret|key|authorization|password|credential)/i;
@@ -1165,20 +1231,21 @@ const CLIENT_BUILD = '20260706-project-window';
       }
       function renderAccountPanel(status) {
         accountStatusCache = status || null;
-        const accountResponse = status?.account || {};
-        const account = accountPayload(status);
-        const authStatus = account.type === 'chatgpt' || account.type === 'apiKey' || accountResponse.requiresOpenaiAuth === false
-          ? '已登录'
-          : accountResponse.requiresOpenaiAuth ? '未登录' : '未知';
-        const identityTitle = account.email || (account.type === 'apiKey' ? 'API key account' : authStatus);
-        const plan = account.planType || account.plan_type || 'unknown';
+        const accountView = accountViewModel(status);
         if (accountIdentity) {
           accountIdentity.innerHTML = `
-            <strong>${escapeHtml(identityTitle)}</strong>
+            <div class="account-identity-main">
+              <span class="account-identity-mark" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7 8a7 7 0 0 0-14 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+              </span>
+              <span class="account-identity-copy">
+                <strong>${escapeHtml(accountView.title)}</strong>
+                <span>${escapeHtml(accountView.modeLabel)}</span>
+              </span>
+              <span class="account-state-chip" data-state="${escapeAttr(accountView.state)}">${escapeHtml(accountView.statusLabel)}</span>
+            </div>
             <div class="account-meta-row">
-              <span>状态：${escapeHtml(authStatus)}</span>
-              <span>方式：${escapeHtml(account.type || 'unknown')}</span>
-              <span>计划：${escapeHtml(plan)}</span>
+              ${accountView.meta.map(([label, value]) => `<span>${escapeHtml(label)}：${escapeHtml(value)}</span>`).join('')}
             </div>
           `;
         }
@@ -1187,9 +1254,11 @@ const CLIENT_BUILD = '20260706-project-window';
         if (accountRawDetails) {
           accountRawDetails.textContent = JSON.stringify(redactAccountDetails(status || {}), null, 2);
         }
-        if (accountLoginBtn) accountLoginBtn.hidden = authStatus === '已登录';
-        if (accountLogoutBtn) accountLogoutBtn.hidden = authStatus !== '已登录';
-        setAccountStatus(status?.rateLimits?.ok === false ? `额度读取失败：${status.rateLimits.error || 'unknown error'}` : '账号状态已刷新。', status?.rateLimits?.ok === false);
+        if (accountLoginBtn) accountLoginBtn.hidden = accountView.signedIn;
+        if (accountLogoutBtn) accountLogoutBtn.hidden = !accountView.signedIn;
+        const rateError = status?.rateLimits?.ok === false ? `额度读取失败：${status.rateLimits.error || 'unknown error'}` : '';
+        const statusError = accountView.error || rateError;
+        setAccountStatus(statusError || '账号状态已刷新。', Boolean(statusError));
         exposeDebugState();
       }
       async function loadAccountPanel() {
