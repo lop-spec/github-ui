@@ -173,7 +173,8 @@
 - 按 2026-07-04 本机横评强制路由 shell：`cmd` 负责 shell 启动/短命令、固定字符串搜索、读文本、端口监听探测、小目录复制删除、`rg/curl/robocopy/where` 等简单外部 exe；`nu` 负责工具定位、大目录枚举、JSON/table 解析筛选、进程列表过滤、HTTP 响应解析和结构化管道。
 - 用户层禁用 `pwsh` 作为默认执行壳；除非上级安全规则、Windows 对象模型、注册表/服务/WMI/CIM、锁定文件/安全递归移动删除，或 `cmd/nu` 已验证无法表达，否则不得主动改用 `pwsh`。例外使用必须在回复或执行记录里说明原因。
 - 简单读文件、查文本、列目录、`rg/git/jq/where` 等外部工具必须使用 `cmd`；只有扁平命令体才“只传命令体”。引号、反引号、空格、转义、带空格路径、中文多词、管道、括号、重定向、嵌套引号、内联代码或 `.cmd` wrapper 必须先按专项规则的 cmd 统一语法转换处理，禁止归因给 `cmd` 本身。
-- 固定字符串搜索用 `rg -n -F -- "text" "file"`；正则用 `rg -n -- "pattern" "file"`；多个词用多个 `-e`，复杂文本用 pattern 文件，避免把 `|`、空格、中文、引号、反引号和标点硬塞进一层引号。
+- 固定字符串搜索优先用无空格锚点或多个 `-e` 分开查；只有本层引号已验证稳定时才用 `rg -n -F -- "text" "file"`。正则用 `rg -n -- "pattern" "file"`；带空格、`|`、中文、引号、反引号、标点或外层执行器会拆引号时，必须改 pattern 文件或无空格关键词锚点，禁止切到 `pwsh` 逃避。
+- `node -e`/`python -c` 在 `cmd` 里只允许无内层引号、无模板字符串、无 JSON/HTML/正则、无路径、无中文、无多语句的短表达式；一旦出现拆引号、`SyntaxError`、`os error 123` 或参数被拆，必须立即改临时 `.mjs`/`.py`、argv 或输入文件，禁止继续堆转义硬拼一行。
 - 大复制必须优先使用 `robocopy`；超大枚举、JSON/table、进程/HTTP 结构化管道必须优先使用 `nu`/Nushell，并按专项规则使用 `nu.exe --no-config-file --no-history --no-std-lib -c`。
 - `cmd` 或 `nu` 发生语法、引号、反引号、空格、转义、重定向、编码或管道错误时，禁止直接逃回 `pwsh`；必须先按 `C:\Users\lop\.codex\rules\artifact-apk-windows.md` 的 cmd 统一语法和 `rg/findstr/node -e/python -c/.cmd wrapper/nu -c` 模板分类改写并重跑，记录成功形态。
 - 若某类 `cmd/nu` 语法错误被修成可复用通用格式，必须立即写入本节或 `C:\Users\lop\.codex\rules\artifact-apk-windows.md`，并验证触发词可命中。

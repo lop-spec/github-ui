@@ -13,11 +13,12 @@
 - cmd 元字符作字面量时用 caret 转义：`^&`、`^|`、`^<`、`^>`、`^(`、`^)`、`^^`。双引号内的元字符通常作为参数字符传给目标程序；若外层会剥掉双引号，立即改临时 `.cmd` 或参数文件。
 - 空格路径和空格参数用双引号包住完整 argv；单引号在 cmd 里不是 quoting，只是普通字符；反引号在 cmd 里也是普通字符，禁止把 PowerShell 的反引号当 cmd 转义符，反引号出错时优先判定为外层解析问题并改 `.cmd`/文件输入。
 - 变量默认用 `set "NAME=value"` 和 `%NAME%`；默认 `/v:off` 防止 `!` 被延迟扩展吞掉。批处理文件中要输出字面 `%` 写 `%%`；变量值本身含字面双引号时，不要混进 `set "..."`，改文件输入/参数文件，或用纯 cmd caret 形态单独验证；需要循环内更新变量时才显式 `/v:on` 并处理 `!`。
-- 固定字符串搜索优先 `rg -n -F -- "text" "file"`；正则优先 `rg -n -- "pattern" "file"`；多个词用多个 `-e`；含引号、反引号、中文、换行、复杂正则或大量标点时，统一改 pattern 文件：`rg -n -F -f patterns.txt -- "file"`，不要继续堆转义。
+- 固定字符串搜索优先用无空格锚点或多个 `-e` 分开查；只有本层引号已验证稳定时才用 `rg -n -F -- "text" "file"`。正则优先 `rg -n -- "pattern" "file"`；含空格、`|`、引号、反引号、中文、换行、复杂正则或大量标点时，统一改 pattern 文件：`rg -n -F -f patterns.txt -- "file"`，或改无空格关键词锚点，不要继续堆转义。
 - `findstr` 只用于单词级简单过滤；多词、中文、标点、正则、括号和路径有空格时，改用 `rg -F`、`rg -e`、pattern 文件或脚本探针。
 - 大复制优先 `robocopy`；超大枚举或结构化管道必须优先用 `nu`。
 - `cmd` 中禁止使用 PowerShell 语法如 `$ts=...`、`$(...)`、对象管道和反引号转义；需要时间戳用纯 cmd 语法、固定文件名或临时脚本。
-- `node -e`、`python -c`、JSON、HTML、正则和多行逻辑只允许短表达式；一旦出现引号嵌套、反斜杠、括号、中文或反引号，必须改临时脚本加 argv/文件输入，不能继续硬拼一行。
+- `node -e`、`python -c`、JSON、HTML、正则和多行逻辑只允许无内层引号、无模板字符串、无路径、无中文、无 shell 元字符的短表达式；只要 JS/Python 代码本身需要字符串字面量、模板字符串、JSON/HTML/正则、路径、中文、多语句或换行，必须改临时 `.mjs`/`.py` 加 argv/文件输入，不能继续硬拼一行。
+- 在 `exec_command(shell="cmd")` 等外层还会解析引号的场景，`node -e`/`python -c` 第一次出现拆引号、`SyntaxError`、`os error 123`、参数被拆或搜索词被当文件名时，立即停止内联，写临时脚本、pattern 文件或参数文件后用 `cmd` 执行；禁止为了省一步继续二次、三次堆转义。
 - Windows 下从 Node/脚本启动 `.cmd` wrapper 易受 spawn/引号影响；能定位到真实 JS/EXE 入口就直调入口，必须跑 `.cmd`/`npm` 时用 shell 模式或显式 `cmd.exe /d /s /c`。
 - 当前 `exec_command(shell="cmd")` 中，路径不含空格且命令扁平时可不加引号；路径含空格或参数需要引号时，进入复杂 wrapper/参数文件模板，不能把引号当字面量传给 `rg/python/nu` 导致 `os error 123`。
 - `nu`/`nush` 一律按 Nushell 处理：优先用 `C:\Users\lop\AppData\Local\Programs\nu\bin\nu.exe --no-config-file --no-history --no-std-lib -c "..."`；脚本内路径用正斜杠和单引号，外部命令加 `^`，丢弃输出用 `| ignore`，避免把 `>nul`、`%VAR%`、`&&`、`||` 等 cmd 语法塞进 nu。
