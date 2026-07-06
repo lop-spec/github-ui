@@ -20,3 +20,7 @@
 - 两边 `tests/` 是隔离验证代码，不属于同步检测对象，也不触发 watcher；full 模式可以运行现有测试做验证，但不得要求测试源码彼此等价。
 - 每次同步检测必须记录本地步骤耗时到 `outputs/parity-sync/performance-log.jsonl`，刷新 `outputs/parity-sync/performance-comparison.md`；不再创建或维护置顶会话“性能对比”。耗时口径只统计本地检测/命令执行，不把大模型等待误差算入性能比较。
 - React 侧已明确排除 Git UI 与内嵌终端 UI；检测器只能在 manifest 标记允许排除的前端 shell/app.js 比对中跳过这些锚点，其他后端/API/状态能力仍按双向检测执行。
+
+## 历史耗时审计口径
+
+- 用户询问“回复慢”“单次问题”“单轮回复”“调用链耗时”时，必须按 user turn 粒度统计：从该次用户输入到该轮最后一个 assistant/tool 事件，逐项列出 `function_call`/`function_call_output`、`custom_tool_call`、`write_stdin`、`web_search_call` 和相邻事件 gap；不得用整条 session 首尾耗时代替单次回复耗时。只有用户明确要求“整条会话/全会话”时才按 session 聚合。
