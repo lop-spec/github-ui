@@ -3754,6 +3754,7 @@ const CLIENT_BUILD = '20260706-project-actions';
         menu.innerHTML = `
           <button data-action="set-current">设为项目主目录</button>
           <button data-action="new-thread">在此项目中新建会话</button>
+          <button data-action="rename-project">重命名项目</button>
           <button data-action="open-explorer">在资源管理器中打开</button>
           <button data-action="cleanup-sessions">清理旧会话...</button>
           <button data-action="remove-root" class="danger">从列表中移除</button>
@@ -3766,6 +3767,7 @@ const CLIENT_BUILD = '20260706-project-actions';
           try {
             if (action === 'set-current') await openProjectFolder(project.workdir);
             if (action === 'new-thread') await openProjectFolder(project.workdir);
+            if (action === 'rename-project') await renameProjectFolder(project);
             if (action === 'open-explorer') await openLocalPath(project.workdir);
             if (action === 'cleanup-sessions') showWorkspaceSessionCleanupDialog(project);
             if (action === 'remove-root') await removeWorkspaceRoot(project);
