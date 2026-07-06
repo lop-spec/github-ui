@@ -11,7 +11,7 @@
     "workspacePath": "C:\\Users\\lop\\Documents\\Codex\\github-ui",
     "scope": "source-rules-skills"
   },
-  "generatedAt": "2026-07-06T15:45:19.645Z",
+  "generatedAt": "2026-07-06T16:26:20.308Z",
   "fullSnapshot": true,
   "mergePolicy": {
     "webui-source": "remote-newer-wins-then-verify",
@@ -20,7 +20,7 @@
     "local-machine": "do-not-cross-machine-apply-use-examples",
     "artifacts": "never-upload-never-apply"
   },
-  "fileCount": 121,
+  "fileCount": 127,
   "files": [
     {
       "path": "Codex-webui-react/AGENTS.md",
@@ -50,6 +50,12 @@
       "path": "Codex-webui-react/RULES.md",
       "sha": "88b2624b7a12bbbb04266c4fc117b65993d3d071",
       "size": 2932,
+      "category": "webui-source"
+    },
+    {
+      "path": "Codex-webui-react/scripts/start-public-supervisor.mjs",
+      "sha": "e139864fde24c9bcd62a6f77d76c9c28582fa172",
+      "size": 1078,
       "category": "webui-source"
     },
     {
@@ -368,6 +374,36 @@
       "path": "Codex-webui-ts/RULES.md",
       "sha": "cc187da2738e8e84cab0353d8a0ccc8dcb23b4d6",
       "size": 7339,
+      "category": "webui-source"
+    },
+    {
+      "path": "Codex-webui-ts/scripts/benchmark-browser-shells.mjs",
+      "sha": "165ab28c1cbe792891d5314d7af6cd82ceb68c89",
+      "size": 50696,
+      "category": "webui-source"
+    },
+    {
+      "path": "Codex-webui-ts/scripts/generate-plus-ledger.mjs",
+      "sha": "b93513c27c974e927af99c2c6d0db7a575c13cfe",
+      "size": 19196,
+      "category": "webui-source"
+    },
+    {
+      "path": "Codex-webui-ts/scripts/verify-command-hidden.mjs",
+      "sha": "4881b24a657a67811a1e0b66abcc008b8cea42b5",
+      "size": 12015,
+      "category": "webui-source"
+    },
+    {
+      "path": "Codex-webui-ts/scripts/webui-app.mjs",
+      "sha": "25d4e3eaf6af802205e5adaeeae4b2906b94abb5",
+      "size": 14509,
+      "category": "webui-source"
+    },
+    {
+      "path": "Codex-webui-ts/scripts/webui-recover.mjs",
+      "sha": "ca068226ad63a518f73ed43c8f0d8c018e771274",
+      "size": 16698,
       "category": "webui-source"
     },
     {
@@ -696,8 +732,8 @@
     },
     {
       "path": "github-sync.config.example.json",
-      "sha": "64e5f79b8d2043271ae6d2486f2cd52962c06863",
-      "size": 5254,
+      "sha": "eff08e37e9c66e816abb04c305068008d1b02e95",
+      "size": 5323,
       "category": "config-example"
     },
     {
@@ -720,14 +756,14 @@
     },
     {
       "path": "scripts/github-pull.mjs",
-      "sha": "6e5cc637f1f61498bd5da7692b3affabc1b398b1",
-      "size": 25604,
+      "sha": "dcd32ccdb5f84382c06896782a55f9902eff2581",
+      "size": 25616,
       "category": "runtime-script"
     },
     {
       "path": "scripts/github-sync.mjs",
-      "sha": "2354418f7ae4a275bbf25939c4ff38620d26d935",
-      "size": 41615,
+      "sha": "ddd3e8e651caa667711d00155ff2582030595482",
+      "size": 41689,
       "category": "runtime-script"
     },
     {

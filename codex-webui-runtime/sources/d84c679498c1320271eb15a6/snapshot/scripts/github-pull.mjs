@@ -213,8 +213,8 @@ function backupPathFor(rootDir, pullConfig, relPath, runId) {
   return path.join(rootDir, pullConfig.backupRoot, runId, relPath);
 }
 
-function requiresRuntimeVerify(relPath) {
-  return /^scripts\/.*\.m?js$/i.test(toPosixPath(relPath));
+export function requiresRuntimeVerify(relPath) {
+  return /(^|\/)scripts\/.*\.m?js$/i.test(toPosixPath(relPath));
 }
 
 function verifyRuntimeContent(relPath, content) {

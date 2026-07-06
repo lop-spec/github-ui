@@ -42,12 +42,14 @@ export const DEFAULT_CONFIG = {
     'Codex-webui-ts/AGENTS.md',
     'Codex-webui-ts/RULES.md',
     'Codex-webui-ts/package.json',
+    'Codex-webui-ts/scripts/**',
     'Codex-webui-ts/tsconfig*.json',
     'Codex-webui-ts/src/**',
     'Codex-webui-ts/public/**',
     'Codex-webui-react/AGENTS.md',
     'Codex-webui-react/RULES.md',
     'Codex-webui-react/package.json',
+    'Codex-webui-react/scripts/**',
     'Codex-webui-react/tsconfig*.json',
     'Codex-webui-react/vite.config.*',
     'Codex-webui-react/index.html',
@@ -395,7 +397,7 @@ function syncPathCategory(relPath) {
   const normalized = toPosixPath(relPath);
   if (/^Codex-webui-(ts|react)\//.test(normalized)) return 'webui-source';
   if (/^(AGENTS\.md|RULES\.md|codex\/(AGENTS\.md|agents\/|prompts\/|rules\/|skills\/|workspace\/))/.test(normalized)) return 'rules';
-  if (/^scripts\/.*\.(mjs|js|cmd|ps1|sh)$/i.test(normalized)) return 'runtime-script';
+  if (/(^|\/)scripts\/.*\.(mjs|js|cmd|ps1|sh)$/i.test(normalized)) return 'runtime-script';
   if (/config|example/i.test(normalized)) return 'config-example';
   return 'source';
 }
