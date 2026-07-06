@@ -61,7 +61,7 @@ const TOKEN = process.env.WEBUI_TOKEN || '';
 const PUBLIC_AUTH_USER = process.env.CODEX_WEBUI_PUBLIC_USER || 'lop';
 const PUBLIC_AUTH_PASSWORD = process.env.CODEX_WEBUI_PUBLIC_PASSWORD || '';
 const ALLOW_ORIGIN = process.env.ALLOW_ORIGIN || `http://localhost:${PORT}`;
-const UI_BUILD = '20260706-transfer-merge';
+const UI_BUILD = '20260706-manual-projects';
 const STATIC_ASSETS = ['index.html', 'css/app.css', 'js/app.js', 'js/transfer.js'];
 const UPLOAD_DIR = process.env.CODEX_WEBUI_UPLOADS ? path.resolve(process.env.CODEX_WEBUI_UPLOADS) : path.resolve(process.cwd(), 'uploads');
 const SESSIONS_ROOT = path.join(os.homedir(), '.codex', 'sessions');
@@ -285,10 +285,6 @@ type DirectoryRoot = { label: string; path: string };
 type DirectoryEntry = { name: string; path: string; kind: 'directory'; hidden: boolean };
 type ProjectGroupEntry = { resume_path: string; workdir: string; last_used: number };
 
-const PROJECT_MARKER_FILES = ['RULES.md', 'AGENTS.md'];
-const PROJECT_DISCOVERY_SKIP = new Set(['.git', '.codex', 'node_modules', 'dist', 'build', 'coverage', 'logs', 'uploads', 'transfers', 'outputs']);
-const PROJECT_DISCOVERY_MAX_DEPTH = Math.max(0, Math.min(6, Number(process.env.CODEX_WEBUI_PROJECT_SCAN_DEPTH || 4) || 4));
-
 function normalizeOpenPath(value: unknown): string {
   let requested = String(value || '').trim();
   if ((requested.startsWith('<') && requested.endsWith('>')) || (requested.startsWith('"') && requested.endsWith('"'))) {
@@ -486,6 +482,7 @@ function recycledSessionCandidate(info: RecycledSessionPathInfo, stat: fs.Stats)
   const latestAssistant = [...messages].reverse().find((message) => message.role === 'assistant' && message.text);
   const latestUser = [...messages].reverse().find((message) => message.role === 'user' && message.text);
   const sessionTime = rolloutTimestampMs(info.recycledPath) || stat.mtimeMs;
+  const archiveTime = stat.mtimeMs;
   return {
     recycledPath: info.recycledPath,
     targetPath: uniquePath(info.targetBasePath),
@@ -497,14 +494,30 @@ function recycledSessionCandidate(info: RecycledSessionPathInfo, stat: fs.Stats)
     latestReply: trimTextForList(latestAssistant?.text || '', 500),
     messageCount: messages.length,
     sessionTime,
+    archiveTime,
     mtimeMs: stat.mtimeMs,
     size: stat.size
   };
 }
 
-function listRecycledSessionCandidates(days = 1, limit = 80) {
+function recycleCandidateMatchesQuery(candidate: ReturnType<typeof recycledSessionCandidate>, query: string): boolean {
+  const terms = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const haystack = [
+    candidate.title,
+    candidate.summary,
+    candidate.latestReply,
+    candidate.name,
+    candidate.relativeSessionPath,
+    candidate.recycledPath,
+    candidate.bucket
+  ].join(' ').toLowerCase();
+  return terms.every((term) => haystack.includes(term));
+}
+
+function listRecycledSessionCandidates(days = 1, limit = 200, query = '') {
   const boundedDays = Math.max(1, Math.min(30, Number(days) || 1));
-  const boundedLimit = Math.max(1, Math.min(200, Number(limit) || 80));
+  const boundedLimit = Math.max(1, Math.min(500, Number(limit) || 200));
   const cutoff = Date.now() - boundedDays * 24 * 60 * 60 * 1000;
   const out: ReturnType<typeof recycledSessionCandidate>[] = [];
   let buckets: fs.Dirent[] = [];
@@ -528,13 +541,14 @@ function listRecycledSessionCandidates(days = 1, limit = 80) {
         if (!info) continue;
         let stat: fs.Stats;
         try { stat = fs.statSync(full); } catch { continue; }
-        const sessionTime = rolloutTimestampMs(full) || stat.mtimeMs;
-        if (sessionTime < cutoff) continue;
-        out.push(recycledSessionCandidate(info, stat));
+        if (stat.mtimeMs < cutoff) continue;
+        const candidate = recycledSessionCandidate(info, stat);
+        if (!recycleCandidateMatchesQuery(candidate, query)) continue;
+        out.push(candidate);
       }
     }
   }
-  out.sort((a, b) => (b.sessionTime || b.mtimeMs || 0) - (a.sessionTime || a.mtimeMs || 0));
+  out.sort((a, b) => (b.archiveTime || b.mtimeMs || 0) - (a.archiveTime || a.mtimeMs || 0));
   return out.slice(0, boundedLimit);
 }
 
@@ -600,6 +614,30 @@ function rememberProjectRoot(projectPath: string): ProjectRoot {
   return root;
 }
 
+function removeProjectRoot(history: History, projectPath: unknown): ProjectRoot | null {
+  const requested = normalizeOpenPath(projectPath);
+  if (!requested) return null;
+  const target = path.resolve(requested);
+  const targetId = projectRootId(target);
+  let removed: ProjectRoot | null = null;
+  history.roots = (history.roots || []).filter((root) => {
+    if (!root || typeof root.path !== 'string') return false;
+    const resolved = path.resolve(root.path);
+    if (projectRootId(resolved) !== targetId) return true;
+    removed = {
+      id: targetId,
+      name: root.name || basenameForDirectory(resolved),
+      path: resolved,
+      last_used: Number(root.last_used || 0)
+    };
+    return false;
+  });
+  if (removed && (!history.selectedRootId || history.selectedRootId === removed.id)) {
+    history.selectedRootId = validHistoryRoots(history)[0]?.id;
+  }
+  return removed;
+}
+
 function validHistoryRoots(history: History): ProjectRoot[] {
   const roots: ProjectRoot[] = [];
   const seen = new Set<string>();
@@ -620,84 +658,6 @@ function validHistoryRoots(history: History): ProjectRoot[] {
   return roots.sort((a, b) => b.last_used - a.last_used);
 }
 
-function hasProjectMarker(directory: string): boolean {
-  return PROJECT_MARKER_FILES.some((name) => {
-    try { return fs.statSync(path.join(directory, name)).isFile(); } catch { return false; }
-  });
-}
-
-function projectDiscoveryBases(): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  const home = os.homedir();
-  const documents = home ? path.join(home, 'Documents') : '';
-  const candidates = [
-    process.env.CODEX_WEBUI_PROJECTS_ROOT,
-    ...readJsonArrayEnv('CODEX_WEBUI_PROJECT_ROOTS_JSON'),
-    documents ? path.join(documents, 'Codex') : '',
-    process.cwd()
-  ];
-  for (const candidate of candidates) {
-    const resolved = resolveProjectPath(candidate);
-    if (!resolved) continue;
-    const key = pathIdentity(resolved);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(resolved);
-  }
-  return out;
-}
-
-function discoverProjectRoots(): ProjectRoot[] {
-  const roots: ProjectRoot[] = [];
-  const seen = new Set<string>();
-  const queue = projectDiscoveryBases().map((directory) => ({ directory, depth: 0 }));
-  while (queue.length) {
-    const item = queue.shift();
-    if (!item) continue;
-    const key = pathIdentity(item.directory);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    if (hasProjectMarker(item.directory)) {
-      roots.push({
-        id: projectRootId(item.directory),
-        name: basenameForDirectory(item.directory),
-        path: item.directory,
-        last_used: 0
-      });
-    }
-    if (item.depth >= PROJECT_DISCOVERY_MAX_DEPTH || roots.length >= 160) continue;
-    let children: fs.Dirent[] = [];
-    try { children = fs.readdirSync(item.directory, { withFileTypes: true }); } catch { continue; }
-    for (const child of children) {
-      if (!child.isDirectory() || PROJECT_DISCOVERY_SKIP.has(child.name)) continue;
-      queue.push({ directory: path.join(item.directory, child.name), depth: item.depth + 1 });
-    }
-  }
-  return roots;
-}
-
-function mergeProjectRoots(...groups: ProjectRoot[][]): ProjectRoot[] {
-  const byId = new Map<string, ProjectRoot>();
-  for (const group of groups) {
-    for (const root of group) {
-      const resolved = resolveProjectPath(root.path);
-      if (!resolved) continue;
-      const id = projectRootId(resolved);
-      const candidate = {
-        id,
-        name: root.name || basenameForDirectory(resolved),
-        path: resolved,
-        last_used: Number(root.last_used || 0)
-      };
-      const existing = byId.get(id);
-      if (!existing || candidate.last_used > existing.last_used) byId.set(id, candidate);
-      else if (!existing.name && candidate.name) existing.name = candidate.name;
-    }
-  }
-  return [...byId.values()].sort((a, b) => b.last_used - a.last_used || a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: 'base' }));
-}
-
 function isWithinProjectRoot(workdir: string, rootPath: string): boolean {
   const relative = path.relative(path.resolve(rootPath), path.resolve(workdir));
   return relative === '' || Boolean(relative && !relative.startsWith('..') && !path.isAbsolute(relative));
@@ -709,6 +669,16 @@ function projectRootForWorkdir(workdir: string | null | undefined, roots: Projec
     .filter((root) => isWithinProjectRoot(resolved, root.path))
     .sort((a, b) => b.path.length - a.path.length);
   return matches[0]?.path || resolved;
+}
+
+function projectListRootForWorkdir(workdir: string | null | undefined, roots: ProjectRoot[], currentRoot: string): string | null {
+  if (!workdir) return null;
+  const resolved = path.resolve(workdir);
+  const registered = roots
+    .filter((root) => isWithinProjectRoot(resolved, root.path))
+    .sort((a, b) => b.path.length - a.path.length)[0]?.path;
+  if (registered) return registered;
+  return isWithinProjectRoot(resolved, currentRoot) ? currentRoot : null;
 }
 
 function ensureProjectGroup(groups: Record<string, ProjectGroupEntry[]>, projectPath: string): ProjectGroupEntry[] {
@@ -1589,16 +1559,20 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && url === '/session/recycle-candidates') {
     if (!requireAuth(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
     const days = Number(parsedUrl.searchParams.get('days') || 1);
-    const limit = Number(parsedUrl.searchParams.get('limit') || 80);
+    const limit = Number(parsedUrl.searchParams.get('limit') || 200);
+    const query = parsedUrl.searchParams.get('q') || parsedUrl.searchParams.get('query') || '';
     const h = readHistory();
     const root = ensureHistoryProject(h);
     writeHistory(h);
+    const items = listRecycledSessionCandidates(days, limit, query);
     return sendJson(res, 200, {
       ok: true,
       days: Math.max(1, Math.min(30, Number(days) || 1)),
+      query: String(query || '').trim(),
+      total: items.length,
       recycleRoot: SESSION_RECYCLE_ROOT,
       historyProject: root,
-      items: listRecycledSessionCandidates(days, limit)
+      items
     });
   }
 
@@ -2051,7 +2025,7 @@ const server = http.createServer((req, res) => {
     const h = readHistory();
     const archived = archivedSessionPathSet(h);
     const pinned = pinnedSessionPathSet(h);
-    const roots = mergeProjectRoots(validHistoryRoots(h), discoverProjectRoots());
+    const roots = validHistoryRoots(h);
     const currentRoot = projectRootForWorkdir(codexService.getWorkdir(), roots);
     const list = scanSessions()
       .filter((session) => !archived.has(pathIdentity(session.path)))
@@ -2128,7 +2102,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && url === '/projects') {
     const h = readHistory();
     const archived = archivedSessionPathSet(h);
-    const roots = mergeProjectRoots(validHistoryRoots(h), discoverProjectRoots());
+    const roots = validHistoryRoots(h);
     const groups: Record<string, ProjectGroupEntry[]> = {};
     const seen = new Map<string, Set<string>>();
     const currentRoot = projectRootForWorkdir(codexService.getWorkdir(), roots);
@@ -2139,7 +2113,9 @@ const server = http.createServer((req, res) => {
     for (const e of h.entries || []) {
       if (!e || typeof e.workdir !== 'string' || !e.workdir) continue;
       if (e.resume_path && archived.has(pathIdentity(e.resume_path))) continue;
-      pushProjectGroupEntry(groups, seen, projectRootForWorkdir(e.workdir, roots), {
+      const projectRoot = projectListRootForWorkdir(e.workdir, roots, currentRoot);
+      if (!projectRoot) continue;
+      pushProjectGroupEntry(groups, seen, projectRoot, {
         resume_path: e.resume_path,
         workdir: e.workdir,
         last_used: Number(e.last_used || 0)
@@ -2148,7 +2124,9 @@ const server = http.createServer((req, res) => {
     for (const session of scanSessions()) {
       const effectiveCwd = effectiveSessionWorkdir(h, session);
       if (!effectiveCwd || archived.has(pathIdentity(session.path))) continue;
-      pushProjectGroupEntry(groups, seen, projectRootForWorkdir(effectiveCwd, roots), {
+      const projectRoot = projectListRootForWorkdir(effectiveCwd, roots, currentRoot);
+      if (!projectRoot) continue;
+      pushProjectGroupEntry(groups, seen, projectRoot, {
         resume_path: session.path,
         workdir: effectiveCwd,
         last_used: Number(session.mtimeMs || 0)
@@ -2158,6 +2136,22 @@ const server = http.createServer((req, res) => {
     setCORS(res);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ groups, current: codexService.getWorkdir(), currentRoot, roots, selectedRootId: h.selectedRootId || projectRootId(currentRoot) }));
+  }
+
+  if (req.method === 'DELETE' && url === '/project/root') {
+    if (!requireAuth(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+    readJsonBody(req)
+      .then((body) => {
+        const requested = body && (body.path || body.workdir);
+        if (!requested || typeof requested !== 'string') return sendJson(res, 400, { ok: false, error: 'Missing project path' });
+        const h = readHistory();
+        const removed = removeProjectRoot(h, requested);
+        writeHistory(h);
+        const roots = validHistoryRoots(h);
+        return sendJson(res, 200, { ok: true, removed: Boolean(removed), root: removed, roots, selectedRootId: h.selectedRootId || roots[0]?.id || '' });
+      })
+      .catch((error) => sendJson(res, actionError(error) === 'Bad JSON' ? 400 : 500, { ok: false, error: actionError(error) }));
+    return;
   }
 
   if (req.method === 'GET' && url === '/filesystem/list') {

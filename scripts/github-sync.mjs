@@ -26,8 +26,15 @@ export const DEFAULT_CONFIG = {
     'package.json',
     'RULES.md',
     'sync-meta/source.json',
+    'codex/AGENTS.md',
+    'codex/agents/lop-*.toml',
+    'codex/config/developer_instructions.mirror.toml',
+    'codex/prompts/*.md',
+    'codex/prompts/**/*.md',
     'codex/rules/*.md',
     'codex/skills/lop-*/**',
+    'codex/workspace/Documents-Codex/AGENTS.md',
+    'codex/workspace/Documents-Codex/RULES.md',
     'parity/**',
     'scripts/**',
     'Codex-webui-ts/AGENTS.md',
@@ -48,6 +55,22 @@ export const DEFAULT_CONFIG = {
     'Codex-webui-react/docs/source-to-target-ledger.md'
   ],
   externalRoots: [
+    {
+      localPath: '~/.codex/AGENTS.md',
+      repoPath: 'codex/AGENTS.md'
+    },
+    {
+      localPath: '~/.codex/agents',
+      repoPath: 'codex/agents',
+      include: ['lop-*.toml'],
+      exclude: ['*.bak*', '*.tmp']
+    },
+    {
+      localPath: '~/.codex/prompts',
+      repoPath: 'codex/prompts',
+      include: ['*.md', '**/*.md'],
+      exclude: ['*.bak*', '**/*.bak*', '*.tmp', '**/*.tmp']
+    },
     {
       localPath: '~/.codex/rules',
       repoPath: 'codex/rules',
@@ -73,8 +96,20 @@ export const DEFAULT_CONFIG = {
         '**/.env',
         '**/.env.*'
       ]
+    },
+    {
+      localPath: '~/Documents/Codex/AGENTS.md',
+      repoPath: 'codex/workspace/Documents-Codex/AGENTS.md'
+    },
+    {
+      localPath: '~/Documents/Codex/RULES.md',
+      repoPath: 'codex/workspace/Documents-Codex/RULES.md'
     }
   ],
+  configMirror: {
+    sourcePath: '~/.codex/config.toml',
+    repoPath: 'codex/config/developer_instructions.mirror.toml'
+  },
   exclude: [
     '**/.git/**',
     '**/.codex/**',
@@ -115,8 +150,14 @@ export const DEFAULT_CONFIG = {
   watchTargets: [
     'package.json',
     'RULES.md',
+    '~/.codex/AGENTS.md',
+    '~/.codex/agents',
+    '~/.codex/config.toml',
+    '~/.codex/prompts',
     '~/.codex/rules',
     '~/.codex/skills',
+    '~/Documents/Codex/AGENTS.md',
+    '~/Documents/Codex/RULES.md',
     'parity',
     'scripts',
     'Codex-webui-ts/AGENTS.md',
@@ -242,6 +283,7 @@ export function loadConfig(rootDir = root, env = process.env) {
   config.include = (config.include || []).map(toPosixPath).filter(Boolean);
   config.exclude = (config.exclude || []).map(toPosixPath).filter(Boolean);
   config.externalRoots = normalizeExternalRoots(rootDir, config);
+  config.configMirror = normalizeConfigMirror(rootDir, config.configMirror);
   config.watchTargets = (config.watchTargets || []).map(toPosixPath).filter(Boolean);
   config.debounceMs = Number(config.debounceMs || DEFAULT_CONFIG.debounceMs);
   config.maxFileBytes = Number(config.maxFileBytes || DEFAULT_CONFIG.maxFileBytes);
@@ -254,12 +296,22 @@ function normalizeExternalRoot(rootDir, entry) {
   const localPath = resolveConfigPath(rootDir, raw.localPath || raw.path || raw.root);
   const repoPath = toPosixPath(raw.repoPath || raw.prefix || raw.target || '');
   if (!localPath || !repoPath) return null;
+  const kind = fs.existsSync(localPath) && fs.statSync(localPath).isFile() ? 'file' : 'directory';
   return {
     localPath,
     repoPath,
+    kind,
     include: (raw.include?.length ? raw.include : ['**']).map(toPosixPath).filter(Boolean),
     exclude: (raw.exclude || []).map(toPosixPath).filter(Boolean)
   };
+}
+
+function normalizeConfigMirror(rootDir, entry) {
+  const raw = entry || {};
+  const sourcePath = resolveConfigPath(rootDir, raw.sourcePath || raw.localPath || raw.path);
+  const repoPath = toPosixPath(raw.repoPath || raw.target || '');
+  if (!sourcePath || !repoPath) return null;
+  return { sourcePath, repoPath };
 }
 
 export function normalizeExternalRoots(rootDir = root, config = loadConfig(rootDir)) {
@@ -370,6 +422,10 @@ function joinRepoPath(prefix, innerPath) {
 export function localPathForSyncPath(rootDir = root, config = loadConfig(rootDir), relPath) {
   const normalized = toPosixPath(relPath);
   for (const externalRoot of normalizeExternalRoots(rootDir, config)) {
+    if (externalRoot.kind === 'file' && normalized === externalRoot.repoPath) {
+      return externalRoot.localPath;
+    }
+    if (externalRoot.kind === 'file') continue;
     if (normalized === externalRoot.repoPath || normalized.startsWith(`${externalRoot.repoPath}/`)) {
       const innerPath = normalized.slice(externalRoot.repoPath.length).replace(/^\/+/, '');
       return safeLocalJoin(externalRoot.localPath, innerPath);
@@ -381,13 +437,52 @@ export function localPathForSyncPath(rootDir = root, config = loadConfig(rootDir
 export function syncPathForLocalPath(rootDir = root, config = loadConfig(rootDir), absPath) {
   const resolved = path.resolve(absPath);
   for (const externalRoot of normalizeExternalRoots(rootDir, config)) {
+    if (externalRoot.kind === 'file' && resolved === externalRoot.localPath) {
+      return externalRoot.repoPath;
+    }
+    if (externalRoot.kind === 'file') continue;
     if (isPathInside(resolved, externalRoot.localPath)) {
       const innerPath = toPosixPath(path.relative(externalRoot.localPath, resolved));
       return joinRepoPath(externalRoot.repoPath, innerPath);
     }
   }
+  if (config.configMirror?.sourcePath && resolved === config.configMirror.sourcePath) {
+    return config.configMirror.repoPath;
+  }
   if (isPathInside(resolved, rootDir)) return toPosixPath(path.relative(rootDir, resolved));
   return '';
+}
+
+function addCollectedFile(files, skipped, seen, config, shouldSync, absPath, relPath, virtualContent = null) {
+  if (!shouldSync(relPath)) return;
+  if (seen.has(relPath)) throw new Error(`duplicate sync path: ${relPath}`);
+  const content = virtualContent || fs.readFileSync(absPath);
+  const size = content.length;
+  if (size > config.maxFileBytes) {
+    skipped.push({ path: relPath, size, reason: 'maxFileBytes' });
+    return;
+  }
+  seen.add(relPath);
+  files.push({
+    path: relPath,
+    absPath,
+    size,
+    sha: gitBlobSha(content),
+    content,
+    virtual: Boolean(virtualContent)
+  });
+}
+
+export function extractDeveloperInstructionsMirror(configText) {
+  const text = String(configText || '');
+  const match = text.match(/(?:^|\n)developer_instructions\s*=\s*('''[\s\S]*?'''|"""[\s\S]*?"""|'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")/);
+  const assignment = match ? match[0].replace(/^\n/, '').trim() : 'developer_instructions = ""';
+  return [
+    '# Sanitized mirror generated from ~/.codex/config.toml.',
+    '# Full config.toml is intentionally not synced.',
+    assignment,
+    ''
+  ].join('\n');
 }
 
 export function collectSyncFiles(rootDir = root, config = loadConfig(rootDir)) {
@@ -397,22 +492,7 @@ export function collectSyncFiles(rootDir = root, config = loadConfig(rootDir)) {
   const seen = new Set();
 
   function addFile(absPath, relPath) {
-    if (!shouldSync(relPath)) return;
-    if (seen.has(relPath)) throw new Error(`duplicate sync path: ${relPath}`);
-    const stat = fs.statSync(absPath);
-    if (stat.size > config.maxFileBytes) {
-      skipped.push({ path: relPath, size: stat.size, reason: 'maxFileBytes' });
-      return;
-    }
-    const content = fs.readFileSync(absPath);
-    seen.add(relPath);
-    files.push({
-      path: relPath,
-      absPath,
-      size: stat.size,
-      sha: gitBlobSha(content),
-      content
-    });
+    addCollectedFile(files, skipped, seen, config, shouldSync, absPath, relPath);
   }
 
   function walk(absDir, baseDir, repoPrefix = '', localFilter = () => true) {
@@ -435,11 +515,19 @@ export function collectSyncFiles(rootDir = root, config = loadConfig(rootDir)) {
   for (const externalRoot of normalizeExternalRoots(rootDir, config)) {
     if (!fs.existsSync(externalRoot.localPath)) continue;
     const stat = fs.statSync(externalRoot.localPath);
+    if (stat.isFile()) {
+      addFile(externalRoot.localPath, externalRoot.repoPath);
+      continue;
+    }
     if (!stat.isDirectory()) continue;
     const include = createPathMatcher(externalRoot.include || ['**']);
     const exclude = createPathMatcher(externalRoot.exclude || []);
     const localFilter = (innerPath) => include(innerPath) && !exclude(innerPath);
     walk(externalRoot.localPath, externalRoot.localPath, externalRoot.repoPath, localFilter);
+  }
+  if (config.configMirror?.sourcePath && fs.existsSync(config.configMirror.sourcePath)) {
+    const content = Buffer.from(extractDeveloperInstructionsMirror(fs.readFileSync(config.configMirror.sourcePath, 'utf8')), 'utf8');
+    addCollectedFile(files, skipped, seen, config, shouldSync, config.configMirror.sourcePath, config.configMirror.repoPath, content);
   }
   if (config.sourceMarkerPath && shouldSync(config.sourceMarkerPath)) {
     const content = sourceMarkerBuffer(rootDir, config);
