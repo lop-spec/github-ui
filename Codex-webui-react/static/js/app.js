@@ -1325,8 +1325,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
         renderGitPanel();
       }
       async function openGitPanel() {
-        openModal('gitModal');
-        await loadGitPanel(gitPanelState.scope);
+        setGitStatusLine('React parity shell hides the Git panel entry.', true);
       }
       async function runGitPathAction(endpoint, extra = {}) {
         const paths = gitSelectionPaths();
@@ -1417,14 +1416,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
         renderTerminalPanel();
       }
       async function openTerminalPanel() {
-        openModal('terminalModal');
-        await loadTerminalSessions();
-        if (!terminalState.pollTimer) {
-          terminalState.pollTimer = setInterval(() => {
-            if (!$('terminalModal')?.classList.contains('open')) return;
-            loadTerminalSessions().catch(() => {});
-          }, 1500);
-        }
+        setTerminalStatus('React parity shell hides the terminal panel entry.', true);
       }
       async function spawnTerminal() {
         const command = String(terminalCommandInput?.value || '').trim();
