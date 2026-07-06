@@ -2143,14 +2143,6 @@ const server = http.createServer((req, res) => {
           setCORS(res); res.writeHead(400, { 'Content-Type':'application/json' });
           return res.end(JSON.stringify({ ok:false, error:'Invalid resume path' }));
         }
-        resumePath = abs;
-        if (!fs.existsSync(abs)) {
-          const h = readHistory();
-          const missingKey = pathIdentity(abs);
-          h.entries = (h.entries || []).filter(e => !e.resume_path || pathIdentity(e.resume_path) !== missingKey);
-          writeHistory(h);
-          return sendJson(res, 404, { ok: false, error: 'Resume path not found', resume_path: null, removed: true });
-        }
       }
       const resumeWorkdir = requestedWorkdir || historyWorkdirForResumePath(resumePath);
       if (resumeWorkdir) codexService.setWorkdir(resumeWorkdir);
@@ -2158,7 +2150,7 @@ const server = http.createServer((req, res) => {
         broadcastStatus();
         setCORS(res);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, resume_path: codexService.getDisplayResumePath(), workdir: codexService.getWorkdir() }));
+        res.end(JSON.stringify({ ok: true, resume_path: resumePath, workdir: codexService.getWorkdir() }));
       });
     });
     return;
@@ -2178,7 +2170,6 @@ const server = http.createServer((req, res) => {
     for (const e of h.entries || []) {
       if (!e || typeof e.workdir !== 'string' || !e.workdir) continue;
       if (e.resume_path && archived.has(pathIdentity(e.resume_path))) continue;
-      if (e.resume_path && !fs.existsSync(e.resume_path)) continue;
       const projectRoot = projectListRootForWorkdir(e.workdir, roots, currentRoot);
       if (!projectRoot) continue;
       pushProjectGroupEntry(groups, seen, projectRoot, {
