@@ -3169,6 +3169,16 @@ const CLIENT_BUILD = '20260706-transfer-merge';
           addSystem(`切换会话失败：${error.message || error}`, true);
         }
       }
+      if (DEBUG_NO_EVENTS) {
+        window.__codexWebuiBench = {
+          async switchToPath(path) {
+            const target = sessionsCache.find((session) => sameSessionPath(session.path, path));
+            if (!target) throw new Error('Benchmark target session not found');
+            await switchToSession(target);
+            return typeof window.__codexWebuiDebug === 'function' ? window.__codexWebuiDebug() : null;
+          }
+        };
+      }
       function createSessionButton(s, pinned) {
         const btn = document.createElement('button');
         const running = isRunningSession(s);
