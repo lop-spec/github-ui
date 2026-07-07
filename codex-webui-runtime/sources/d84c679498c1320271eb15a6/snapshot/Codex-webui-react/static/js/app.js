@@ -1,7 +1,8 @@
-const CLIENT_BUILD = '20260706-manual-projects';
+const CLIENT_BUILD = '20260706-reply-layout-v1';
       document.documentElement.dataset.webuiBuild = CLIENT_BUILD;
       const DEBUG_NO_EVENTS = new URLSearchParams(location.search).has('debug_no_events');
       const SIDEBAR_VISIBLE_LIMIT = 10;
+      const PROJECT_THREAD_RECENT_WINDOW_MS = 30 * 60 * 1000;
       const COMPOSER_DRAFT_KEY = 'plusComposerDraft';
 
       const $ = (id) => document.getElementById(id);
@@ -84,7 +85,6 @@ const CLIENT_BUILD = '20260706-manual-projects';
       const threadTitle = $('threadTitle');
       const threadMeta = $('threadMeta');
       const resumePill = $('resumePill');
-      const modelPill = $('modelPill');
       const tokenStats = $('tokenStats');
       const accountIdentity = $('accountIdentity');
       const accountLimitsSection = $('accountLimitsSection');
@@ -366,6 +366,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
           permissionLevel: currentPermissionLevel(),
           composerMoreMenuOpen: Boolean(composerMoreMenu && !composerMoreMenu.hidden),
           accountModalOpen: $('accountModal')?.classList.contains('open') || false,
+          accountLimitsExpanded,
           accountLimitCards: accountLimitCards ? accountLimitCards.querySelectorAll('.account-limit-card').length : 0,
           debugNoEvents: DEBUG_NO_EVENTS,
           sidebarVisible: isVisible(document.querySelector('.sidebar')),
@@ -466,6 +467,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
       let selectedServiceTier = '';
       let serviceTierOverrideActive = false;
       let accountStatusCache = null;
+      let accountLimitsExpanded = false;
       let composerRequestInFlight = false;
       const TRANSCRIPT_PAGE_LIMIT = 120;
       const SEND_BUTTON_SVG = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -509,6 +511,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
         { id:'review', description:'对当前改动发起 Review。', flavor:'official', action:'startReview', meta:'Official', requiresThread:true, supportsInlineArgs:true },
         { id:'status', description:'查看当前会话配置与 token 使用情况。', flavor:'official', action:'showStatus', meta:'Local', availableDuringTask:true },
         { id:'debug-config', description:'查看配置层与来源。', flavor:'official', action:'showDebugConfig', meta:'Local', availableDuringTask:true },
+        { id:'diff', description:'显示当前工作区 diff。', flavor:'official', action:'showDiff', meta:'Local', requiresWorkspace:true, availableDuringTask:true },
         { id:'goal', description:'设置或查看长任务目标。', flavor:'official', action:'threadGoal', meta:'Official', requiresThread:true, supportsInlineArgs:true, availableDuringTask:true },
         { id:'compact', description:'压缩当前线程上下文。', flavor:'official', action:'compactThread', meta:'Official', requiresThread:true, availableDuringTask:false },
         { id:'fork', description:'从当前线程创建分支线程。', flavor:'official', action:'forkThread', meta:'Official', requiresThread:true, availableDuringTask:false },
@@ -728,15 +731,44 @@ const CLIENT_BUILD = '20260706-manual-projects';
         const lines = String(markdown || '').split(/\r?\n/);
         const out = [];
         let paragraph = [];
+        let list = null;
+        let quote = [];
         const flushParagraph = () => {
           if (!paragraph.length) return;
           out.push(`<p>${renderInlineMarkdown(paragraph.join(' '))}</p>`);
           paragraph = [];
         };
+        const flushList = () => {
+          if (!list) return;
+          const tag = list.type === 'ordered' ? 'ol' : 'ul';
+          const className = list.type === 'ordered' ? 'message-list message-list-ordered' : 'message-list message-list-unordered';
+          out.push(`<${tag} class="${className}">${list.items.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join('')}</${tag}>`);
+          list = null;
+        };
+        const flushQuote = () => {
+          if (!quote.length) return;
+          out.push(`<blockquote class="message-callout"><p>${renderInlineMarkdown(quote.join(' '))}</p></blockquote>`);
+          quote = [];
+        };
+        const flushFlow = () => {
+          flushParagraph();
+          flushList();
+          flushQuote();
+        };
+        const pushListItem = (type, value) => {
+          flushParagraph();
+          flushQuote();
+          if (!list || list.type !== type) {
+            flushList();
+            list = { type, items: [] };
+          }
+          list.items.push(value);
+        };
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i] || '';
+          const trimmed = line.trim();
           if (line.trim().startsWith('```')) {
-            flushParagraph();
+            flushFlow();
             const code = [];
             i++;
             while (i < lines.length && !(lines[i] || '').trim().startsWith('```')) {
@@ -746,8 +778,38 @@ const CLIENT_BUILD = '20260706-manual-projects';
             out.push(`<pre class="message-code"><code>${escapeHtml(code.join('\n'))}</code></pre>`);
             continue;
           }
-          if (line.includes('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1] || '')) {
+          const headingMatch = trimmed.match(/^(#{1,4})\s+(.+)$/);
+          if (headingMatch) {
+            flushFlow();
+            const level = Math.min(headingMatch[1].length, 4);
+            const tag = `h${Math.min(level + 1, 4)}`;
+            out.push(`<${tag} class="message-heading message-heading-level-${level}">${renderInlineMarkdown(headingMatch[2])}</${tag}>`);
+            continue;
+          }
+          if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+            flushFlow();
+            out.push('<hr class="message-divider" />');
+            continue;
+          }
+          const quoteMatch = trimmed.match(/^>\s?(.*)$/);
+          if (quoteMatch) {
             flushParagraph();
+            flushList();
+            quote.push(quoteMatch[1]);
+            continue;
+          }
+          const orderedMatch = trimmed.match(/^\d+[\.)]\s+(.+)$/);
+          if (orderedMatch) {
+            pushListItem('ordered', orderedMatch[1]);
+            continue;
+          }
+          const unorderedMatch = trimmed.match(/^[-*+]\s+(.+)$/);
+          if (unorderedMatch) {
+            pushListItem('unordered', unorderedMatch[1]);
+            continue;
+          }
+          if (line.includes('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1] || '')) {
+            flushFlow();
             const headers = splitTableRow(line);
             i += 2;
             const rows = [];
@@ -760,12 +822,14 @@ const CLIENT_BUILD = '20260706-manual-projects';
             continue;
           }
           if (!line.trim()) {
-            flushParagraph();
+            flushFlow();
             continue;
           }
+          flushList();
+          flushQuote();
           paragraph.push(line.trim());
         }
-        flushParagraph();
+        flushFlow();
         return out.join('');
       }
       function renderAttachmentImages(attachments = []) {
@@ -998,6 +1062,22 @@ const CLIENT_BUILD = '20260706-manual-projects';
           addBubble(`Status\n\n${localStatus}\n\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\``, 'agent');
         } catch (error) {
           addSystem(`${localStatus}\n\n账号状态读取失败：${error.message || error}`, true);
+        }
+      }
+      async function requestWebUiServiceAction(action) {
+        const endpoint = action === 'restart' ? '/webui/restart' : '/webui/recover';
+        const label = action === 'restart' ? '重启' : '恢复';
+        const button = action === 'restart' ? $('restartBtn') : $('recoverBtn');
+        if (button) button.disabled = true;
+        try {
+          const result = await postJsonEndpoint(endpoint, {});
+          addSystem(`已请求${label}整个 WebUI 服务。后台脚本会检查 5055、5056、自动续跑状态并重新拉起独立 App。`);
+          return result;
+        } catch (error) {
+          addSystem(`${label} WebUI 服务失败：${error.message || error}`, true);
+          throw error;
+        } finally {
+          if (button) setTimeout(() => { button.disabled = false; }, 2500);
         }
       }
       function setComposerSpeedMenuOpen(open) {
@@ -1416,7 +1496,8 @@ const CLIENT_BUILD = '20260706-manual-projects';
         renderGitPanel();
       }
       async function openGitPanel() {
-        setGitStatusLine('React parity shell hides the Git panel entry.', true);
+        openModal('gitModal');
+        await loadGitPanel(gitPanelState.scope);
       }
       async function runGitPathAction(endpoint, extra = {}) {
         const paths = gitSelectionPaths();
@@ -1507,7 +1588,14 @@ const CLIENT_BUILD = '20260706-manual-projects';
         renderTerminalPanel();
       }
       async function openTerminalPanel() {
-        setTerminalStatus('React parity shell hides the terminal panel entry.', true);
+        openModal('terminalModal');
+        await loadTerminalSessions();
+        if (!terminalState.pollTimer) {
+          terminalState.pollTimer = setInterval(() => {
+            if (!$('terminalModal')?.classList.contains('open')) return;
+            loadTerminalSessions().catch(() => {});
+          }, 1500);
+        }
       }
       async function spawnTerminal() {
         const command = String(terminalCommandInput?.value || '').trim();
@@ -1596,6 +1684,18 @@ const CLIENT_BUILD = '20260706-manual-projects';
         if (data?.kind === 'website' && data.url) {
           window.open(data.url, '_blank', 'noopener');
         }
+      }
+      async function showGitDiff() {
+        await openGitPanel();
+        const data = await fetchJsonEndpoint('/git/diff');
+        if (!data.isRepo) {
+          addSystem(`Git：当前工作区不是 Git 仓库。\n${data.workdir || currentWorkdir}\n${data.error || ''}`.trim(), true);
+          return;
+        }
+        const files = (data.files || []).slice(0, 40).map((file) => [file.status, file.path]);
+        const table = files.length ? markdownTable(['状态', '文件'], files) : '当前没有未提交文件。';
+        const diff = data.diff ? `\n\n\`\`\`diff\n${data.diff}\n\`\`\`` : '';
+        addBubble(`Git 状态\n\n分支：${data.branch || '(detached)'}\n仓库：${data.root}\n\n${table}${diff}`, 'agent');
       }
       function setSkillsActionError(message = '') {
         if (!skillsActionError) return;
@@ -2170,6 +2270,10 @@ const CLIENT_BUILD = '20260706-manual-projects';
           addBubble('```json\n' + JSON.stringify(currentConfig, null, 2) + '\n```', 'agent');
           return;
         }
+        if (item.action === 'showDiff') {
+          await showGitDiff();
+          return;
+        }
         if (item.action === 'initAgents') {
           await initAgents();
           return;
@@ -2376,8 +2480,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
         return threads.reduce((latest, thread) => Math.max(latest, Number(thread.last_used || thread.mtimeMs || 0)), 0);
       }
       function projectCategoryFor(project, threads = projectThreadsForWorkdir(project.workdir, project.entries)) {
-        if (sameProjectPath(project.workdir, currentProjectRootPath || currentWorkdir)) return { id: 'current', label: '当前项目', order: 0 };
-        return { id: 'other', label: '其他项目', order: 1 };
+        return { id: 'projects', label: '项目', order: 0 };
       }
       function categorizeProjects(projects) {
         const buckets = new Map();
@@ -2393,10 +2496,6 @@ const CLIENT_BUILD = '20260706-manual-projects';
           .map((category) => ({
             ...category,
             items: category.items.sort((a, b) => {
-              if (sameProjectPath(a.workdir, currentWorkdir)) return -1;
-              if (sameProjectPath(b.workdir, currentWorkdir)) return 1;
-              if (sameProjectPath(a.workdir, currentProjectRootPath)) return -1;
-              if (sameProjectPath(b.workdir, currentProjectRootPath)) return 1;
               return b.latestMs - a.latestMs || projectDisplayName(a.workdir).localeCompare(projectDisplayName(b.workdir));
             })
           }));
@@ -2429,6 +2528,16 @@ const CLIENT_BUILD = '20260706-manual-projects';
         if (expandedProjectThreadLists.has(key)) expandedProjectThreadLists.delete(key);
         else expandedProjectThreadLists.add(key);
         renderProjects();
+      }
+      function collapseOtherProjectThreads(workdir) {
+        const keepKey = normalizeSessionPath(workdir);
+        if (!keepKey) return;
+        const previousProjectCount = expandedProjectPaths.size;
+        const previousThreadCount = expandedProjectThreadLists.size;
+        expandedProjectPaths = new Set([...expandedProjectPaths].filter((item) => item === keepKey));
+        expandedProjectThreadLists = new Set([...expandedProjectThreadLists].filter((item) => item === keepKey));
+        if (expandedProjectPaths.size !== previousProjectCount) saveExpandedProjectPaths();
+        if (expandedProjectThreadLists.size !== previousThreadCount) exposeDebugState();
       }
       function ensureCurrentProjectExpanded() {
         const projectPath = currentProjectRootPath || currentWorkdir;
@@ -2501,6 +2610,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
         activeStreamSessionPath = null;
         currentWorkdir = workdir || currentWorkdir;
         currentProjectRootPath = workdir || currentProjectRootPath || currentWorkdir;
+        collapseOtherProjectThreads(currentProjectRootPath || currentWorkdir);
         codexRunning = false;
         queuedFollowUps = [];
         guidanceState = { pending: 0, saved: 0, count: 0, items: [] };
@@ -3196,7 +3306,6 @@ const CLIENT_BUILD = '20260706-manual-projects';
           if (!response.ok) throw new Error(cfg.error || `HTTP ${response.status}`);
           currentConfig = cfg;
           if (!serviceTierOverrideActive) selectedServiceTier = normalizeServiceTier(cfg.service_tier);
-          modelPill.textContent = cfg.model || 'gpt-5.5';
           $('modelLabel').textContent = prettyModel(cfg.model);
           $('effortLabel').textContent = effortLabel(cfg.model_reasoning_effort);
           $('cfgModel').value = cfg.model || '';
@@ -3354,6 +3463,7 @@ const CLIENT_BUILD = '20260706-manual-projects';
         currentResumePath = session.path;
         currentWorkdir = session.cwd || currentWorkdir;
         currentProjectRootPath = session.projectRoot || currentProjectRootPath || currentWorkdir;
+        collapseOtherProjectThreads(currentProjectRootPath || currentWorkdir);
         updateComposerContext();
         resumePill.textContent = '已恢复';
         threadTitle.textContent = sessionTitle(session);
@@ -4042,14 +4152,14 @@ const CLIENT_BUILD = '20260706-manual-projects';
               <button type="button" class="workspace-root-button" aria-expanded="${expanded ? 'true' : 'false'}" title="${escapeAttr(p.workdir)}">
                 <span class="workspace-root-chevron" aria-hidden="true">${expanded ? '⌄' : '›'}</span>
                 <span class="workspace-folder-icon" aria-hidden="true">${FOLDER_BUTTON_SVG}</span>
-                <span class="thread-label">${escapeHtml(name)}</span>
+                <span class="thread-label workspace-root-name">${escapeHtml(name)}</span>
                 <span class="workspace-root-meta">${threads.length ? `${threads.length} 条` : '空'}</span>
               </button>
               <div class="workspace-root-actions">
                 <button type="button" class="workspace-root-menu-btn" title="更多项目操作" aria-label="更多项目操作">⋯</button>
-                <button type="button" class="project-rename-btn" title="重命名项目" aria-label="重命名项目">✎</button>
+                <button type="button" class="project-rename-btn workspace-root-secondary-action" title="重命名项目" aria-label="重命名项目">✎</button>
                 <button type="button" class="project-new-thread-btn" title="在此项目中新建会话" aria-label="在此项目中新建会话">+</button>
-                <button type="button" class="project-open-btn" title="设为项目主目录" aria-label="设为项目主目录">${FOLDER_BUTTON_SVG}</button>
+                <button type="button" class="project-open-btn workspace-root-secondary-action" title="设为项目主目录" aria-label="设为项目主目录">${FOLDER_BUTTON_SVG}</button>
               </div>
             </div>`;
           root.querySelector('.workspace-root-row').addEventListener('contextmenu', (event) => openWorkspaceRootMenuFromEvent(event, p));
@@ -5207,30 +5317,30 @@ const CLIENT_BUILD = '20260706-manual-projects';
           });
         }
       });
-      terminalSpawnBtn?.addEventListener('click', () => spawnTerminal().catch((error) => setTerminalStatus(`终端创建失败：${error.message || error}`, true)));
-      terminalRefreshBtn?.addEventListener('click', () => loadTerminalSessions().catch((error) => setTerminalStatus(`终端刷新失败：${error.message || error}`, true)));
-      terminalKillBtn?.addEventListener('click', () => killActiveTerminal().catch((error) => setTerminalStatus(`终端结束失败：${error.message || error}`, true)));
-      terminalSendInputBtn?.addEventListener('click', () => sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true)));
-      terminalStdinInput?.addEventListener('keydown', (event) => {
+      terminalSpawnBtn.addEventListener('click', () => spawnTerminal().catch((error) => setTerminalStatus(`终端创建失败：${error.message || error}`, true)));
+      terminalRefreshBtn.addEventListener('click', () => loadTerminalSessions().catch((error) => setTerminalStatus(`终端刷新失败：${error.message || error}`, true)));
+      terminalKillBtn.addEventListener('click', () => killActiveTerminal().catch((error) => setTerminalStatus(`终端结束失败：${error.message || error}`, true)));
+      terminalSendInputBtn.addEventListener('click', () => sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true)));
+      terminalStdinInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
           sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true));
         }
       });
-      gitRefreshBtn?.addEventListener('click', () => loadGitPanel(gitPanelState.scope).catch((error) => setGitStatusLine(`Git 刷新失败：${error.message || error}`, true)));
-      gitOpenRepoBtn?.addEventListener('click', () => {
+      gitRefreshBtn.addEventListener('click', () => loadGitPanel(gitPanelState.scope).catch((error) => setGitStatusLine(`Git 刷新失败：${error.message || error}`, true)));
+      gitOpenRepoBtn.addEventListener('click', () => {
         const repo = gitPanelState.status?.repoRoot || gitPanelState.status?.root || currentWorkdir;
         if (repo) openLocalPath(repo);
       });
-      gitScopeUnstaged?.addEventListener('click', () => loadGitPanel('unstaged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
-      gitScopeStaged?.addEventListener('click', () => loadGitPanel('staged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
-      gitStageSelected?.addEventListener('click', () => runGitPathAction('/git/stage').catch((error) => setGitStatusLine(`暂存失败：${error.message || error}`, true)));
-      gitUnstageSelected?.addEventListener('click', () => runGitPathAction('/git/unstage').catch((error) => setGitStatusLine(`取消暂存失败：${error.message || error}`, true)));
-      gitDiscardSelected?.addEventListener('click', () => discardSelectedGitChanges().catch((error) => setGitStatusLine(`丢弃失败：${error.message || error}`, true)));
-      gitCommitBtn?.addEventListener('click', () => commitGitChanges().catch((error) => setGitStatusLine(`提交失败：${error.message || error}`, true)));
-      gitPullBtn?.addEventListener('click', () => pullGitChanges().catch((error) => setGitStatusLine(`拉取失败：${error.message || error}`, true)));
-      gitPushBtn?.addEventListener('click', () => pushGitChanges().catch((error) => setGitStatusLine(`推送失败：${error.message || error}`, true)));
-      gitBranchCreate?.addEventListener('click', () => createGitBranch().catch((error) => setGitStatusLine(`创建分支失败：${error.message || error}`, true)));
+      gitScopeUnstaged.addEventListener('click', () => loadGitPanel('unstaged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
+      gitScopeStaged.addEventListener('click', () => loadGitPanel('staged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
+      gitStageSelected.addEventListener('click', () => runGitPathAction('/git/stage').catch((error) => setGitStatusLine(`暂存失败：${error.message || error}`, true)));
+      gitUnstageSelected.addEventListener('click', () => runGitPathAction('/git/unstage').catch((error) => setGitStatusLine(`取消暂存失败：${error.message || error}`, true)));
+      gitDiscardSelected.addEventListener('click', () => discardSelectedGitChanges().catch((error) => setGitStatusLine(`丢弃失败：${error.message || error}`, true)));
+      gitCommitBtn.addEventListener('click', () => commitGitChanges().catch((error) => setGitStatusLine(`提交失败：${error.message || error}`, true)));
+      gitPullBtn.addEventListener('click', () => pullGitChanges().catch((error) => setGitStatusLine(`拉取失败：${error.message || error}`, true)));
+      gitPushBtn.addEventListener('click', () => pushGitChanges().catch((error) => setGitStatusLine(`推送失败：${error.message || error}`, true)));
+      gitBranchCreate.addEventListener('click', () => createGitBranch().catch((error) => setGitStatusLine(`创建分支失败：${error.message || error}`, true)));
       projectOpenConfirm.addEventListener('click', () => openProjectFolder(projectPathInput.value));
       projectPickFolder.addEventListener('click', pickProjectFolder);
       projectBrowseUp.addEventListener('click', () => {
@@ -5249,10 +5359,11 @@ const CLIENT_BUILD = '20260706-manual-projects';
       $('newChatBtn').addEventListener('click', () => {
         startNewChat().catch((error) => addSystem(`新建会话失败：${error.message || error}`, true));
       });
-      $('cancelBtn').addEventListener('click', stopCurrentTurn);
       $('restartBtn').addEventListener('click', async () => {
-        await fetch('/restart', { method:'POST' });
-        addSystem('已请求重启当前会话。');
+        await requestWebUiServiceAction('restart');
+      });
+      $('recoverBtn').addEventListener('click', async () => {
+        await requestWebUiServiceAction('recover');
       });
       $('openSettingsBtn').addEventListener('click', async () => { await loadConfig(); openModal('settingsModal'); });
       $('modelSelectBtn').addEventListener('click', async () => { await loadConfig(); openModal('settingsModal'); });

@@ -61,7 +61,13 @@ const TOKEN = process.env.WEBUI_TOKEN || '';
 const PUBLIC_AUTH_USER = process.env.CODEX_WEBUI_PUBLIC_USER || 'lop';
 const PUBLIC_AUTH_PASSWORD = process.env.CODEX_WEBUI_PUBLIC_PASSWORD || '';
 const ALLOW_ORIGIN = process.env.ALLOW_ORIGIN || `http://localhost:${PORT}`;
-const UI_BUILD = '20260706-manual-projects';
+const AUTO_RECOVER_INTERRUPTED_TURNS = (() => {
+  const raw = String(process.env.CODEX_WEBUI_AUTO_RECOVER || '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'off'].includes(raw)) return false;
+  return PORT === 5155;
+})();
+const UI_BUILD = '20260706-reply-layout-v1';
 const STATIC_ASSETS = ['index.html', 'css/app.css', 'js/app.js', 'js/transfer.js'];
 const UPLOAD_DIR = process.env.CODEX_WEBUI_UPLOADS ? path.resolve(process.env.CODEX_WEBUI_UPLOADS) : path.resolve(process.cwd(), 'uploads');
 const SESSIONS_ROOT = path.join(os.homedir(), '.codex', 'sessions');
@@ -149,6 +155,26 @@ function sendJson(res: ServerResponse, status: number, data: unknown): void {
   setCORS(res);
   res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(data));
+}
+
+function launchWebUiRecovery(mode: 'restart' | 'recover'): { ok: boolean; pid?: number; mode: string; logDir: string; error?: string } {
+  const scriptPath = path.join(process.cwd(), 'scripts', 'webui-recover.mjs');
+  if (!fs.existsSync(scriptPath)) return { ok: false, mode, logDir: path.join(process.cwd(), 'logs'), error: `Missing recovery script: ${scriptPath}` };
+  const logDir = path.join(process.cwd(), 'logs');
+  fs.mkdirSync(logDir, { recursive: true });
+  const out = fs.openSync(path.join(logDir, `webui-${mode}.out.log`), 'a');
+  const err = fs.openSync(path.join(logDir, `webui-${mode}.err.log`), 'a');
+  const child = spawn(process.execPath, [scriptPath, '--mode', mode, '--delay', mode === 'restart' ? '900' : '100', '--launch-app'], {
+    cwd: process.cwd(),
+    detached: true,
+    windowsHide: true,
+    stdio: ['ignore', out, err],
+    env: { ...process.env }
+  });
+  child.unref();
+  try { fs.closeSync(out); } catch {}
+  try { fs.closeSync(err); } catch {}
+  return { ok: true, pid: child.pid, mode, logDir };
 }
 
 function readJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<any> {
@@ -1914,6 +1940,44 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && url === '/webui/restart') {
+    if (!requireAuth(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+    const result = launchWebUiRecovery('restart');
+    return sendJson(res, result.ok ? 202 : 500, result);
+  }
+
+  if (req.method === 'POST' && url === '/webui/recover') {
+    if (!requireAuth(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+    const result = launchWebUiRecovery('recover');
+    return sendJson(res, result.ok ? 202 : 500, result);
+  }
+
+  if (req.method === 'POST' && url === '/webui/app-server/ensure') {
+    if (!requireAuth(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+    readJsonBody(req)
+      .then(async (body) => {
+        const backend = await codexService.ensureBackendReady();
+        const interrupted = body?.recoverInterrupted === false
+          ? { ok: true, skipped: true, reason: 'disabled by request' }
+          : await codexService.recoverInterruptedTurnIfNeeded();
+        broadcastStatus();
+        sendJson(res, 200, { ok: true, backend, interrupted });
+      })
+      .catch((error) => sendJson(res, 500, { ok: false, error: actionError(error) }));
+    return;
+  }
+
+  if (req.method === 'POST' && url === '/webui/interrupted/recover') {
+    if (!requireAuth(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+    codexService.recoverInterruptedTurnIfNeeded()
+      .then((result) => {
+        broadcastStatus();
+        sendJson(res, result.ok === false ? 409 : 200, result);
+      })
+      .catch((error) => sendJson(res, 500, { ok: false, error: actionError(error) }));
+    return;
+  }
+
   if (req.method === 'POST' && url === '/new-chat') {
     if (!requireAuth(req)) { setCORS(res); res.writeHead(401); return res.end(); }
     codexService.clearQueuedInputs();
@@ -2143,6 +2207,14 @@ const server = http.createServer((req, res) => {
           setCORS(res); res.writeHead(400, { 'Content-Type':'application/json' });
           return res.end(JSON.stringify({ ok:false, error:'Invalid resume path' }));
         }
+        if (!fs.existsSync(abs)) {
+          const h = readHistory();
+          const missingKey = pathIdentity(abs);
+          h.entries = (h.entries || []).filter(e => !e.resume_path || pathIdentity(e.resume_path) !== missingKey);
+          writeHistory(h);
+          return sendJson(res, 404, { ok: false, error: 'Resume path not found', resume_path: null, removed: true });
+        }
+        resumePath = abs;
       }
       const resumeWorkdir = requestedWorkdir || historyWorkdirForResumePath(resumePath);
       if (resumeWorkdir) codexService.setWorkdir(resumeWorkdir);
@@ -2150,7 +2222,7 @@ const server = http.createServer((req, res) => {
         broadcastStatus();
         setCORS(res);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, resume_path: resumePath, workdir: codexService.getWorkdir() }));
+        res.end(JSON.stringify({ ok: true, resume_path: codexService.getDisplayResumePath(), workdir: codexService.getWorkdir() }));
       });
     });
     return;
@@ -2170,6 +2242,7 @@ const server = http.createServer((req, res) => {
     for (const e of h.entries || []) {
       if (!e || typeof e.workdir !== 'string' || !e.workdir) continue;
       if (e.resume_path && archived.has(pathIdentity(e.resume_path))) continue;
+      if (e.resume_path && !fs.existsSync(e.resume_path)) continue;
       const projectRoot = projectListRootForWorkdir(e.workdir, roots, currentRoot);
       if (!projectRoot) continue;
       pushProjectGroupEntry(groups, seen, projectRoot, {
@@ -2383,6 +2456,18 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, HOST, () => {
   codexCliUpdater = startCodexCliUpdater((payload) => broadcast('notification', payload));
+  if (AUTO_RECOVER_INTERRUPTED_TURNS) {
+    setTimeout(() => {
+      codexService.recoverInterruptedTurnIfNeeded()
+        .then((result) => {
+          if (!result?.skipped) {
+            broadcast('system', { text: result?.ok === false ? `自动恢复检查未完成：${result.reason || 'unknown'}` : '自动恢复检查完成。' });
+            broadcastStatus();
+          }
+        })
+        .catch((error) => broadcast('stderr', { text: `自动恢复检查失败：${actionError(error)}` }));
+    }, 1500);
+  }
   const network = runtimeNetworkInfo();
   console.log(`Codex WebUI listening on ${HOST}:${PORT}`);
   console.log(`Codex WebUI local: ${network.localUrl}`);

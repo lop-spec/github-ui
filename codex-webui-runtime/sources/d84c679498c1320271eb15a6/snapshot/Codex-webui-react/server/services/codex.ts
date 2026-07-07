@@ -22,6 +22,11 @@ const BACKEND_MODE = String(process.env.CODEX_WEBUI_BACKEND || (process.env.CODE
 const APP_SERVER_URL = process.env.CODEX_APP_SERVER_URL || DEFAULT_APP_SERVER_URL;
 const GUIDANCE_DEBOUNCE_MS = Math.max(0, Number(process.env.CODEX_GUIDANCE_DEBOUNCE_MS || 500));
 const GUIDANCE_STEER_TIMEOUT_MS = Math.max(500, Number(process.env.CODEX_GUIDANCE_STEER_TIMEOUT_MS || 1500));
+const INTERRUPTED_TURN_STATE_FILE = process.env.CODEX_WEBUI_INTERRUPTED_TURN_STATE_FILE
+  ? path.resolve(process.env.CODEX_WEBUI_INTERRUPTED_TURN_STATE_FILE)
+  : path.join(LOG_DIR, 'interrupted-turn.json');
+const AUTO_CONTINUE_PROMPT = '继续完成上一次因为 WebUI 服务、网络或 app-server 中断而未完成的任务。先检查当前对话上下文和未完成工作，然后从中断点继续推进；不要重复已经完成的步骤。';
+const MAX_AUTO_CONTINUE_ATTEMPTS = Math.max(1, Number(process.env.CODEX_WEBUI_MAX_AUTO_CONTINUE_ATTEMPTS || 3));
 
 interface InputAttachment {
   kind: 'image';
@@ -67,6 +72,50 @@ interface PendingUserInputRequest {
   itemId: string | null;
   questions: UserInputQuestion[];
   createdAt: string;
+}
+
+interface InterruptedTurnState {
+  threadId: string | null;
+  turnId: string | null;
+  resumePath: string | null;
+  cwd: string;
+  reason: string;
+  userStopped: boolean;
+  attempts: number;
+  updatedAt: string;
+}
+
+function readInterruptedTurnState(): InterruptedTurnState | null {
+  try {
+    if (!fs.existsSync(INTERRUPTED_TURN_STATE_FILE)) return null;
+    const parsed = JSON.parse(fs.readFileSync(INTERRUPTED_TURN_STATE_FILE, 'utf8'));
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      threadId: typeof parsed.threadId === 'string' ? parsed.threadId : null,
+      turnId: typeof parsed.turnId === 'string' ? parsed.turnId : null,
+      resumePath: typeof parsed.resumePath === 'string' ? parsed.resumePath : null,
+      cwd: typeof parsed.cwd === 'string' ? parsed.cwd : DEFAULT_WORKDIR,
+      reason: typeof parsed.reason === 'string' ? parsed.reason : 'unknown',
+      userStopped: parsed.userStopped === true,
+      attempts: Number.isFinite(Number(parsed.attempts)) ? Number(parsed.attempts) : 0,
+      updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date(0).toISOString()
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeInterruptedTurnState(state: InterruptedTurnState | null): void {
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    if (!state) {
+      if (fs.existsSync(INTERRUPTED_TURN_STATE_FILE)) fs.unlinkSync(INTERRUPTED_TURN_STATE_FILE);
+      return;
+    }
+    const tmp = `${INTERRUPTED_TURN_STATE_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf8');
+    fs.renameSync(tmp, INTERRUPTED_TURN_STATE_FILE);
+  } catch {}
 }
 
 function createChildLogStreams() {
@@ -190,6 +239,61 @@ export class CodexService extends EventEmitter {
     };
   }
 
+  public async ensureBackendReady(): Promise<any> {
+    if (!this.useAppServerBackend()) {
+      return { ok: true, backend: 'exec', running: this.isRunning() };
+    }
+    await this.ensureAppServer();
+    if (!this.activeThreadId) await this.ensureAppThread();
+    if (this.activeThreadRunning && !this.activeTurnId) await this.recoverActiveTurnId();
+    return {
+      ok: true,
+      backend: 'app-server',
+      threadId: this.activeThreadId,
+      turnId: this.activeTurnId,
+      running: this.isRunning()
+    };
+  }
+
+  public async recoverInterruptedTurnIfNeeded(): Promise<any> {
+    if (!this.useAppServerBackend()) return { ok: true, skipped: true, reason: 'backend-not-app-server' };
+    const state = readInterruptedTurnState();
+    if (!state) return { ok: true, skipped: true, reason: 'no-interrupted-turn' };
+    if (state.userStopped) return { ok: true, skipped: true, reason: 'user-stopped' };
+    if (state.attempts >= MAX_AUTO_CONTINUE_ATTEMPTS) {
+      return { ok: false, skipped: true, reason: 'max-attempts', attempts: state.attempts };
+    }
+
+    if (state.cwd) this.currentWorkdir = path.resolve(state.cwd);
+    await this.ensureAppServer();
+
+    const resumePath = this.isExistingResumePath(state.resumePath)
+      ? state.resumePath
+      : this.findRolloutByThreadId(state.threadId) || this.findDefaultResumePath();
+    if (this.isExistingResumePath(resumePath)) await this.resumeAppThread(resumePath);
+    else await this.ensureAppThread();
+
+    if (this.activeThreadRunning && !this.activeTurnId) await this.recoverActiveTurnId();
+    if (this.isRunning()) {
+      this.persistInterruptedTurnState('recovery-found-running-turn');
+      return { ok: true, recovered: true, status: 'already-running', threadId: this.activeThreadId, turnId: this.activeTurnId };
+    }
+
+    writeInterruptedTurnState({
+      ...state,
+      threadId: this.activeThreadId || state.threadId,
+      turnId: this.activeTurnId || state.turnId,
+      resumePath: this.isExistingResumePath(this.lastResumePath) ? this.lastResumePath : resumePath,
+      cwd: this.currentWorkdir,
+      reason: 'auto-continue-started',
+      userStopped: false,
+      attempts: state.attempts + 1,
+      updatedAt: new Date().toISOString()
+    });
+    const sent = await this.sendUserInput(AUTO_CONTINUE_PROMPT, [], [], 'default', null);
+    return { ok: true, recovered: true, status: sent.status, id: sent.id, turnId: sent.turnId || null };
+  }
+
   public getPendingUserInputRequests(): PendingUserInputRequest[] {
     return [...this.pendingUserInputs.values()].map((request) => ({
       ...request,
@@ -255,7 +359,52 @@ export class CodexService extends EventEmitter {
     this.emit('status_update');
   }
 
+  private persistInterruptedTurnState(reason: string): void {
+    const threadId = this.activeThreadId;
+    const turnId = this.activeTurnId;
+    const resumePath = this.isExistingResumePath(this.lastResumePath) ? this.lastResumePath : null;
+    if (!threadId && !turnId && !resumePath) return;
+    const existing = readInterruptedTurnState();
+    writeInterruptedTurnState({
+      threadId,
+      turnId,
+      resumePath,
+      cwd: this.currentWorkdir,
+      reason,
+      userStopped: false,
+      attempts: existing?.attempts || 0,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  private clearInterruptedTurnState(reason: string): void {
+    void reason;
+    writeInterruptedTurnState(null);
+  }
+
+  private clearUserStoppedRuntimeState(reason: string): void {
+    this.activeTurnId = null;
+    this.activeThreadRunning = false;
+    this.activeStartedAtMs = 0;
+    this.pendingUserInputs.clear();
+    this.clearGuidanceInputs(false);
+    this.clearInterruptedTurnState(reason);
+  }
+
+  private markInterruptedTurnUserStopped(reason: string): void {
+    this.persistInterruptedTurnState(reason);
+    const existing = readInterruptedTurnState();
+    if (!existing) return;
+    writeInterruptedTurnState({
+      ...existing,
+      reason,
+      userStopped: true,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
   public stop(cb?: () => void): void {
+    if (this.isRunning()) this.persistInterruptedTurnState('service-stop');
     if (this.useAppServerBackend()) {
       this.shutdownAppServer();
       if (cb) cb();
@@ -264,15 +413,8 @@ export class CodexService extends EventEmitter {
     this.stopExec(cb);
   }
 
-  private clearUserStoppedRuntimeState(): void {
-    this.activeTurnId = null;
-    this.activeThreadRunning = false;
-    this.activeStartedAtMs = 0;
-    this.pendingUserInputs.clear();
-    this.clearGuidanceInputs(false);
-  }
-
   public cancelActiveTurn(cb?: () => void): void {
+    this.markInterruptedTurnUserStopped('user-cancel');
     if (!this.useAppServerBackend()) {
       this.stopExec(cb);
       return;
@@ -289,7 +431,7 @@ export class CodexService extends EventEmitter {
     })()
       .catch((error) => this.broadcastStderr(`停止失败：${error.message || error}`))
       .finally(() => {
-        this.clearUserStoppedRuntimeState();
+        this.clearUserStoppedRuntimeState('user-cancel');
         this.emit('status_update');
         if (cb) cb();
       });
@@ -334,6 +476,7 @@ export class CodexService extends EventEmitter {
     this.activeTurnId = result?.turn?.id || this.activeTurnId;
     this.activeThreadRunning = true;
     this.activeStartedAtMs = Date.now();
+    this.persistInterruptedTurnState('review-started');
     this.emit('status_update');
     return result || {};
   }
@@ -683,6 +826,7 @@ export class CodexService extends EventEmitter {
     this.activeTurnId = result?.turn?.id || this.activeTurnId;
     this.activeThreadRunning = true;
     this.activeStartedAtMs = Date.now();
+    this.persistInterruptedTurnState('turn-started');
     this.clearGuidanceInputs(false);
     this.broadcastUserInput(input);
     this.emit('status_update');
@@ -693,7 +837,7 @@ export class CodexService extends EventEmitter {
     await this.ensureAppServer();
     if (this.activeThreadId) return;
 
-    let resumePath = this.lastResumePath;
+    let resumePath = this.isExistingResumePath(this.lastResumePath) ? this.lastResumePath : null;
     if (!resumePath && resumeAllowed() && !this.suppressAutoResume) resumePath = this.findDefaultResumePath();
     if (resumePath) {
       try {
@@ -735,6 +879,7 @@ export class CodexService extends EventEmitter {
     client.on('error', (error) => this.broadcastStderr(`app-server 启动失败：${error instanceof Error ? error.message : String(error)}`));
     client.on('exit', (code) => {
       if (code !== null && code !== 1000) this.broadcastStderr(`app-server websocket closed with code ${code}`);
+      if (this.activeTurnId || this.activeThreadRunning) this.persistInterruptedTurnState('app-server-disconnected');
       this.appServer = null;
       this.appServerStarting = null;
       this.activeTurnId = null;
@@ -808,6 +953,7 @@ export class CodexService extends EventEmitter {
     const active = thread?.status?.type === 'active' || status.type === 'active';
     this.activeThreadRunning = active;
     if (active && !this.activeStartedAtMs) this.activeStartedAtMs = Date.now();
+    if (active) this.persistInterruptedTurnState('thread-active');
     if (!active) {
       this.activeTurnId = null;
       this.activeStartedAtMs = 0;
@@ -820,6 +966,7 @@ export class CodexService extends EventEmitter {
     this.activeTurnId = String(turn.id);
     this.activeThreadRunning = true;
     if (!this.activeStartedAtMs) this.activeStartedAtMs = Date.now();
+    this.persistInterruptedTurnState('in-progress-turn');
     return true;
   }
 
@@ -895,6 +1042,7 @@ export class CodexService extends EventEmitter {
       this.activeTurnId = params.turn?.id || this.activeTurnId;
       this.activeThreadRunning = true;
       this.activeStartedAtMs = Date.now();
+      this.persistInterruptedTurnState('turn-started-notification');
       if (this.activeThreadId) this.lastAgentMessageByThread.delete(this.activeThreadId);
       this.emit('status_update');
       return;
@@ -965,16 +1113,20 @@ export class CodexService extends EventEmitter {
     const turn = params.turn || {};
     const threadId = params.threadId || this.activeThreadId;
     const durationMs = this.activeStartedAtMs ? Date.now() - this.activeStartedAtMs : 0;
-    const latest = this.findRolloutByThreadId(threadId) || this.lastResumePath;
+    const latest = this.findRolloutByThreadId(threadId) || (this.isExistingResumePath(this.lastResumePath) ? this.lastResumePath : null);
     if (latest) {
       this.lastResumePath = latest;
       this.recordResume(latest);
     }
     if (turn.status === 'failed' && turn.error) {
+      this.persistInterruptedTurnState('turn-failed');
       const body = `turn failed: ${JSON.stringify(turn.error)}`;
       this.broadcastStderr(body);
       this.emit('broadcast', 'notification', { title: 'Agent Error', body, kind: 'error', threadId, durationMs, minVisible: false });
-    } else if (durationMs >= 60_000) {
+    } else {
+      this.clearInterruptedTurnState('turn-completed');
+    }
+    if (turn.status !== 'failed' && durationMs >= 60_000) {
       const body = threadId ? this.lastAgentMessageByThread.get(threadId) : '';
       this.emit('broadcast', 'notification', {
         title: 'Agent Complete',
@@ -1122,6 +1274,7 @@ export class CodexService extends EventEmitter {
   private shutdownAppServer(): void {
     // The app-server is a separate 5156 process. WebUI stop/restart only
     // disconnects this client so active Codex work is not killed with 5155.
+    if (this.activeTurnId || this.activeThreadRunning) this.persistInterruptedTurnState('app-server-shutdown');
     this.appServer?.shutdown();
     this.appServer = null;
     this.appServerStarting = null;
@@ -1295,7 +1448,7 @@ export class CodexService extends EventEmitter {
     ];
     const imageArgs = imagePaths.flatMap((filePath) => ['--image', filePath]);
 
-    const sessionId = this.sessionIdFromPath(this.lastResumePath);
+    const sessionId = this.sessionIdFromPath(this.isExistingResumePath(this.lastResumePath) ? this.lastResumePath : null);
     if (sessionId) return ['exec', 'resume', ...common, ...imageArgs, '--all', sessionId, '-'];
     return ['exec', ...common, ...imageArgs, '-C', this.currentWorkdir, '-'];
   }
