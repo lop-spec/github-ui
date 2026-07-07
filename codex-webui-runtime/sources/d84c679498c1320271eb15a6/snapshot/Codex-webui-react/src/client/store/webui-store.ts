@@ -266,9 +266,14 @@ export const useWebuiStore = create<WebuiState>((set, get) => ({
       });
     });
   },
-  loadSessions: async () => {
+  loadSessions: async (options = {}) => {
     const data = await api<SessionsResponse>('/sessions');
-    set({ sessions: data.sessions || [], currentResumePath: data.current || get().currentResumePath, workdir: data.workdir || get().workdir });
+    set((state) => ({
+      sessions: data.sessions || [],
+      currentResumePath: options.followServerCurrent || !state.currentResumePath ? data.current || state.currentResumePath : state.currentResumePath,
+      runtimeResumePath: state.runtimeResumePath || data.current || null,
+      workdir: data.workdir || state.workdir
+    }));
   },
   loadProjects: async () => {
     const data = await api<ProjectsResponse>('/projects');
@@ -277,24 +282,27 @@ export const useWebuiStore = create<WebuiState>((set, get) => ({
   loadTranscript: async (path) => {
     const suffix = path ? `?path=${encodeURIComponent(path)}` : '';
     const data = await api<{ messages: any[]; current?: string | null }>(`/session-messages${suffix}`);
+    const responsePath = data.current || path || get().currentResumePath;
+    if (path && responsePath && !sameSessionPath(path, responsePath)) return;
     set({
       messages: (data.messages || []).map((item) => ({
         ...msg(messageRole(item), messageText(item), item),
         turnId: item.turnId || item.turn_id || '',
         status: item.status || 'done'
       })),
-      currentResumePath: data.current || path || get().currentResumePath,
+      currentResumePath: responsePath,
       streamMessageId: null
     });
   },
   resumeSession: async (session) => {
     await postJson('/resume', { path: session.path, workdir: session.cwd || '' });
+    set({ runtimeResumePath: session.path });
     await get().loadTranscript(session.path);
     await Promise.allSettled([get().loadSessions(), get().loadProjects()]);
   },
   newChat: async () => {
     await postJson('/new-chat');
-    set({ messages: [], currentResumePath: null, streamMessageId: null });
+    set({ messages: [], currentResumePath: null, runtimeResumePath: null, streamMessageId: null });
     await Promise.allSettled([get().loadSessions(), get().loadProjects()]);
   },
   sendMessage: async () => {
@@ -308,7 +316,12 @@ export const useWebuiStore = create<WebuiState>((set, get) => ({
       collaborationPreset: get().collaborationPreset,
       serviceTier: get().serviceTier
     });
-    set({ queue: result.queue || get().queue, running: Boolean(result.running), currentResumePath: result.resume_path || get().currentResumePath });
+    set({
+      queue: result.queue || get().queue,
+      running: Boolean(result.running),
+      currentResumePath: result.resume_path || get().currentResumePath,
+      runtimeResumePath: result.resume_path || get().runtimeResumePath
+    });
   },
   cancel: async () => {
     await postJson('/cancel');
@@ -316,7 +329,7 @@ export const useWebuiStore = create<WebuiState>((set, get) => ({
   },
   restart: async () => {
     await postJson('/restart');
-    await Promise.allSettled([get().loadSessions(), get().loadTranscript()]);
+    await Promise.allSettled([get().loadSessions({ followServerCurrent: true }), get().loadTranscript()]);
   },
   loadConfig: async () => set({ config: await api<Record<string, any>>('/config') }),
   saveConfig: async (patch) => {
