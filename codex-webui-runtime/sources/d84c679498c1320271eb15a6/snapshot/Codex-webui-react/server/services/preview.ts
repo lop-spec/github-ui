@@ -5,6 +5,7 @@ const IMAGE_EXTENSIONS = new Set(['avif', 'bmp', 'gif', 'jpeg', 'jpg', 'png', 's
 const DOCUMENT_EXTENSIONS = new Set(['csv', 'md', 'markdown', 'pdf', 'rtf', 'txt']);
 const TEXT_EXTENSIONS = new Set(['csv', 'md', 'markdown', 'txt']);
 const MAX_PREVIEW_BYTES = 220_000;
+const MAX_DIRECTORY_PREVIEW_ENTRIES = 160;
 
 function extensionFor(value: string): string {
   return path.extname(value.split(/[?#]/, 1)[0] || value).replace(/^\./, '').toLowerCase();
@@ -73,6 +74,28 @@ async function previewWebsite(url: string) {
 
 function previewFile(filePath: string) {
   const stat = fs.statSync(filePath);
+  if (stat.isDirectory()) {
+    const entries = fs.readdirSync(filePath, { withFileTypes: true })
+      .map((entry) => ({
+        name: entry.name,
+        path: path.join(filePath, entry.name),
+        kind: entry.isDirectory() ? 'directory' : 'file',
+        hidden: entry.name.startsWith('.')
+      }))
+      .sort((a, b) => {
+        if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
+        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      });
+    return {
+      ok: true,
+      kind: 'directory',
+      path: filePath,
+      name: basenameFor(filePath),
+      entries: entries.slice(0, MAX_DIRECTORY_PREVIEW_ENTRIES),
+      totalEntries: entries.length,
+      truncated: entries.length > MAX_DIRECTORY_PREVIEW_ENTRIES
+    };
+  }
   if (!stat.isFile()) throw new Error('preview target must be a file');
   const extension = extensionFor(filePath);
   const name = basenameFor(filePath);
