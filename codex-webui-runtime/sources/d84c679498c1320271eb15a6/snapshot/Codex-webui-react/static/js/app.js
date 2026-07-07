@@ -1642,7 +1642,7 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
         }
         if (data.kind === 'directory') {
           const entries = (data.entries || []).map((entry) => `
-            <button type="button" class="quick-preview-entry" data-path="${escapeAttr(entry.path)}" data-kind="${escapeAttr(entry.kind || '')}">
+            <button type="button" class="quick-preview-entry" data-path="${escapeAttr(entry.path)}" data-kind="${escapeAttr(entry.kind || '')}" title="${escapeAttr(entry.kind === 'directory' ? '预览文件夹' : '用系统默认应用打开')}">
               <span class="quick-preview-entry-icon">${entry.kind === 'directory' ? '▣' : '□'}</span>
               <span class="quick-preview-entry-name">${escapeHtml(entry.name || entry.path || '')}</span>
             </button>
@@ -1704,6 +1704,10 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
       async function openPreviewExternal() {
         const data = previewState.data;
         if (data?.kind === 'file' && data.path) {
+          await openLocalPath(data.path);
+          return;
+        }
+        if (data?.kind === 'directory' && data.path) {
           await openLocalPath(data.path);
           return;
         }
