@@ -420,6 +420,7 @@ const CLIENT_BUILD = '20260707-local-path-preview-v1';
       let projectsCache = [];
       let projectRootsCache = [];
       let conversationCollectionsRefresh = null;
+      let optimisticDeletedSessionPaths = new Set();
       let expandedProjectPaths = new Set();
       let hiddenProjectPaths = new Set();
       let expandedProjectCategories = new Set();
@@ -3377,7 +3378,7 @@ const CLIENT_BUILD = '20260707-local-path-preview-v1';
           const response = await fetch('/sessions', { cache: 'no-store' });
           const data = await response.json();
           if (!response.ok || !Array.isArray(data.sessions)) throw new Error(data.error || `HTTP ${response.status}`);
-          sessionsCache = data.sessions || [];
+          sessionsCache = (data.sessions || []).filter((session) => !optimisticDeletedSessionPaths.has(normalizeSessionPath(session.path)));
           currentResumePath = data.current || null;
           currentWorkdir = data.workdir || currentWorkdir;
           currentProjectRootPath = data.currentRoot || currentProjectRootPath || currentWorkdir;
@@ -4031,10 +4032,23 @@ const CLIENT_BUILD = '20260707-local-path-preview-v1';
         const response = await fetch('/session', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ path: session.path }) });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
       }
+      function removeSessionFromLocalCollections(sessionPath) {
+        const targetKey = normalizeSessionPath(sessionPath);
+        if (!targetKey) return;
+        sessionsCache = sessionsCache.filter((item) => normalizeSessionPath(item.path) !== targetKey);
+        projectsCache = projectsCache.map((project) => ({
+          ...project,
+          entries: (project.entries || []).filter((entry) => {
+            const entryPath = entry?.resume_path || entry?.path || '';
+            return normalizeSessionPath(entryPath) !== targetKey;
+          })
+        }));
+      }
       function clearRemovedSessionState(session, reason) {
         pinnedPaths.delete(session.path);
         safeLocalSet('plusPinnedSessions', JSON.stringify([...pinnedPaths]));
-        sessionsCache = sessionsCache.filter((item) => !sameSessionPath(item.path, session.path));
+        optimisticDeletedSessionPaths.add(normalizeSessionPath(session.path));
+        removeSessionFromLocalCollections(session.path);
         dropConversationNavPath(session.path);
         if (sameSessionPath(currentResumePath, session.path)) {
           currentResumePath = null;
@@ -4053,14 +4067,16 @@ const CLIENT_BUILD = '20260707-local-path-preview-v1';
         renderProjects();
       }
       async function deleteSession(session) {
+        const title = sessionTitle(session);
+        clearRemovedSessionState(session, '会话正在归档到回收区');
+        closeContextMenu();
         try {
           await deleteSessionFile(session);
-          clearRemovedSessionState(session, '会话已归档到回收区');
-          addSystem(`已归档到回收区：${sessionTitle(session)}`);
-          closeContextMenu();
+          addSystem(`已归档到回收区：${title}`);
         } catch (error) {
           addSystem(`归档到回收区失败：${error.message || error}`, true);
-          closeContextMenu();
+          optimisticDeletedSessionPaths.delete(normalizeSessionPath(session.path));
+          await Promise.all([loadSessions(), loadProjects()]);
         }
       }
       async function resumeSession(path, session) {
@@ -4086,7 +4102,10 @@ const CLIENT_BUILD = '20260707-local-path-preview-v1';
           currentWorkdir = data.current || currentWorkdir;
           currentProjectRootPath = data.currentRoot || currentProjectRootPath || currentWorkdir;
           projectRootsCache = Array.isArray(data.roots) ? data.roots : [];
-          projectsCache = Object.entries(data.groups || {}).map(([workdir, entries]) => ({ workdir, entries }));
+          projectsCache = Object.entries(data.groups || {}).map(([workdir, entries]) => ({
+            workdir,
+            entries: (entries || []).filter((entry) => !optimisticDeletedSessionPaths.has(normalizeSessionPath(entry?.resume_path || entry?.path || '')))
+          }));
           renderProjects();
         } catch (error) {
           projectsCache = [];
