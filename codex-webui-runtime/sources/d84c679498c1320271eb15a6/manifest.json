@@ -13,7 +13,7 @@
     "workspacePath": "C:\\Users\\lop\\Documents\\Codex\\github-ui",
     "scope": "source-rules-skills"
   },
-  "generatedAt": "2026-07-07T08:15:47.019Z",
+  "generatedAt": "2026-07-07T08:17:05.427Z",
   "fullSnapshot": true,
   "mergePolicy": {
     "webui-source": "remote-newer-wins-then-verify",
@@ -584,8 +584,8 @@
     },
     {
       "path": "codex/config/developer_instructions.mirror.toml",
-      "sha": "78ae25f5fa0f4ace1bf73c37405c734a65eec40a",
-      "size": 1585,
+      "sha": "469fde9bc0f9820ac7d9e95e50d5e0cf09c166c6",
+      "size": 1635,
       "category": "config-example"
     },
     {
