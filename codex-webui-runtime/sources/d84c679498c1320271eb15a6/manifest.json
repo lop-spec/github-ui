@@ -13,7 +13,7 @@
     "workspacePath": "C:\\Users\\lop\\Documents\\Codex\\github-ui",
     "scope": "source-rules-skills"
   },
-  "generatedAt": "2026-07-07T08:50:31.597Z",
+  "generatedAt": "2026-07-07T08:50:52.579Z",
   "fullSnapshot": true,
   "mergePolicy": {
     "webui-source": "remote-newer-wins-then-verify",
@@ -782,8 +782,8 @@
     },
     {
       "path": "parity/bidirectional-manifest.json",
-      "sha": "a6a21987d219d8a96c6aa233a989fe67271e0b50",
-      "size": 6928,
+      "sha": "a7856ed5539665a64916750a1947f92876722007",
+      "size": 6929,
       "category": "source"
     },
     {

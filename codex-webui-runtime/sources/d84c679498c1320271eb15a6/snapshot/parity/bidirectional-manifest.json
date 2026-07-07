@@ -197,7 +197,7 @@
       "id": "react:index-loads-source-css",
       "file": "Codex-webui-react/index.html",
       "mustContain": [
-        "/css/app.css?v=react-parity-20260707-session-title-v1"
+        "/css/app.css?v=react-parity-20260707-local-dir-open-v5"
       ]
     },
     {
