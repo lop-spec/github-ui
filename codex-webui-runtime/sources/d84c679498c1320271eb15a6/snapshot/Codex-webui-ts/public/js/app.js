@@ -3068,6 +3068,80 @@ const CLIENT_BUILD = '20260707-question-jump-v1';
       function scrollToBottom() {
         const timeline = $('timeline');
         timeline.scrollTop = timeline.scrollHeight;
+        scheduleQuestionJumpUpdate();
+      }
+      function questionNavNodes(selector) {
+        return [...log.querySelectorAll(selector)].filter((node) => {
+          if (!node || node.hidden) return false;
+          const rect = node.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        });
+      }
+      function questionNavOffsetTop(node, timeline = $('timeline')) {
+        const timelineRect = timeline.getBoundingClientRect();
+        const rect = node.getBoundingClientRect();
+        return rect.top - timelineRect.top + timeline.scrollTop;
+      }
+      function questionNavOffsetBottom(node, timeline = $('timeline')) {
+        return questionNavOffsetTop(node, timeline) + node.getBoundingClientRect().height;
+      }
+      function questionNavState() {
+        const timeline = $('timeline');
+        const top = timeline.scrollTop;
+        const bottom = top + timeline.clientHeight;
+        const questions = questionNavNodes('.bubble.user');
+        const answers = questionNavNodes('.bubble.agent');
+        const previousQuestion = [...questions].reverse().find((node) => questionNavOffsetTop(node, timeline) < top - 12) || null;
+        const nextAnswer = answers.find((node) => questionNavOffsetBottom(node, timeline) > bottom + 12) || null;
+        return { previousQuestion, nextAnswer, questions, answers };
+      }
+      function setQuestionJumpButton(button, enabled, activeTitle, emptyTitle) {
+        if (!button) return;
+        button.disabled = !enabled;
+        button.classList.toggle('muted', !enabled);
+        const title = enabled ? activeTitle : emptyTitle;
+        button.title = title;
+        button.setAttribute('aria-label', title);
+      }
+      function updateQuestionJumpControls() {
+        questionJumpUpdateFrame = 0;
+        const state = questionNavState();
+        setQuestionJumpButton(questionJumpUp, Boolean(state.previousQuestion), '定位上一个提问', '没有上一个提问');
+        setQuestionJumpButton(questionJumpDown, Boolean(state.nextAnswer), '定位下一个回复结束', '没有下一个回复结束');
+      }
+      function scheduleQuestionJumpUpdate() {
+        if (questionJumpUpdateFrame) return;
+        questionJumpUpdateFrame = window.requestAnimationFrame(updateQuestionJumpControls);
+      }
+      function flashQuestionNavTarget(target) {
+        if (!target) return;
+        window.clearTimeout(questionNavPulseTimer);
+        log.querySelectorAll('.question-nav-target').forEach((node) => node.classList.remove('question-nav-target'));
+        target.classList.add('question-nav-target');
+        questionNavPulseTimer = window.setTimeout(() => target.classList.remove('question-nav-target'), 700);
+      }
+      function scrollToQuestionNavTarget(target, align = 'start') {
+        if (!target) {
+          updateQuestionJumpControls();
+          return;
+        }
+        const timeline = $('timeline');
+        const margin = 18;
+        const top = questionNavOffsetTop(target, timeline);
+        const bottom = top + target.getBoundingClientRect().height;
+        const maxTop = Math.max(0, timeline.scrollHeight - timeline.clientHeight);
+        const nextTop = align === 'end'
+          ? bottom - timeline.clientHeight + margin
+          : top - margin;
+        const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+        timeline.scrollTo({ top: Math.max(0, Math.min(maxTop, nextTop)), behavior });
+        flashQuestionNavTarget(target);
+        window.setTimeout(scheduleQuestionJumpUpdate, behavior === 'smooth' ? 220 : 0);
+      }
+      function jumpQuestionNavigation(direction) {
+        const state = questionNavState();
+        if (direction === 'up') scrollToQuestionNavTarget(state.previousQuestion, 'start');
+        else scrollToQuestionNavTarget(state.nextAnswer, 'end');
       }
       function transcriptPageEndpoint(path, before = null) {
         const params = new URLSearchParams({ limit: String(TRANSCRIPT_PAGE_LIMIT) });
