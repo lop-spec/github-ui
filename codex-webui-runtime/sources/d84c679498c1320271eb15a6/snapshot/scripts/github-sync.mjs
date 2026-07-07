@@ -7,7 +7,8 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-export const SYNC_SCOPE_SCHEMA_VERSION = 3;
+export const SYNC_SCOPE_SCHEMA_VERSION = 4;
+export const REACT_SYNC_CLOSED_MESSAGE = 'Codex-webui-react sync is closed; React paths are never uploaded, watched, or applied.';
 
 export const DEFAULT_CONFIG = {
   owner: '',
@@ -23,7 +24,6 @@ export const DEFAULT_CONFIG = {
   debounceMs: 1500,
   maxFileBytes: 2 * 1024 * 1024,
   maxChangesPerCommit: 800,
-  reactSyncEnabled: false,
   include: [
     '.gitignore',
     'AGENTS.md',
@@ -50,19 +50,7 @@ export const DEFAULT_CONFIG = {
     'Codex-webui-ts/scripts/**',
     'Codex-webui-ts/tsconfig*.json',
     'Codex-webui-ts/src/**',
-    'Codex-webui-ts/public/**',
-    'Codex-webui-react/AGENTS.md',
-    'Codex-webui-react/components.json',
-    'Codex-webui-react/RULES.md',
-    'Codex-webui-react/package.json',
-    'Codex-webui-react/scripts/**',
-    'Codex-webui-react/tsconfig*.json',
-    'Codex-webui-react/vite.config.*',
-    'Codex-webui-react/index.html',
-    'Codex-webui-react/server/**',
-    'Codex-webui-react/src/**',
-    'Codex-webui-react/static/**',
-    'Codex-webui-react/docs/source-to-target-ledger.md'
+    'Codex-webui-ts/public/**'
   ],
   externalRoots: [
     {
@@ -179,17 +167,7 @@ export const DEFAULT_CONFIG = {
     'Codex-webui-ts/package.json',
     'Codex-webui-ts/tsconfig.json',
     'Codex-webui-ts/src',
-    'Codex-webui-ts/public',
-    'Codex-webui-react/AGENTS.md',
-    'Codex-webui-react/RULES.md',
-    'Codex-webui-react/package.json',
-    'Codex-webui-react/tsconfig.server.json',
-    'Codex-webui-react/vite.config.ts',
-    'Codex-webui-react/index.html',
-    'Codex-webui-react/server',
-    'Codex-webui-react/src',
-    'Codex-webui-react/static',
-    'Codex-webui-react/docs/source-to-target-ledger.md'
+    'Codex-webui-ts/public'
   ]
 };
 
@@ -294,8 +272,7 @@ export function loadConfig(rootDir = root, env = process.env) {
   config.sourceStatePath = toPosixPath(env.GITHUB_SYNC_STATE_PATH || config.sourceStatePath || DEFAULT_CONFIG.sourceStatePath);
   if (env.GITHUB_SYNC_CREATE_REPO !== undefined) config.createRepo = parseBool(env.GITHUB_SYNC_CREATE_REPO, config.createRepo);
   if (env.GITHUB_SYNC_PRIVATE !== undefined) config.private = parseBool(env.GITHUB_SYNC_PRIVATE, config.private);
-  if (env.GITHUB_SYNC_REACT !== undefined) config.reactSyncEnabled = parseBool(env.GITHUB_SYNC_REACT, config.reactSyncEnabled);
-  else config.reactSyncEnabled = parseBool(config.reactSyncEnabled, false);
+  config.reactSyncEnabled = false;
 
   config.include = (config.include || []).map(toPosixPath).filter(Boolean);
   config.exclude = (config.exclude || []).map(toPosixPath).filter(Boolean);
@@ -420,7 +397,7 @@ export function portableScopeHash(config = DEFAULT_CONFIG) {
   const payload = {
     version: SYNC_SCOPE_SCHEMA_VERSION,
     runtimeRoot: runtimeRootPath(config),
-    reactSyncEnabled: Boolean(config.reactSyncEnabled),
+    reactSyncEnabled: false,
     include: (config.include || []).map(toPosixPath).sort(),
     exclude: (config.exclude || []).map(toPosixPath).sort(),
     externalRoots,
@@ -513,7 +490,7 @@ export function createSyncFilter(config) {
   const exclude = createPathMatcher(config.exclude || []);
   return (relPath) => {
     const normalized = toPosixPath(relPath);
-    if (!config.reactSyncEnabled && isReactSyncPath(normalized)) return false;
+    if (isReactSyncPath(normalized)) return false;
     return Boolean(normalized) && include(normalized) && !exclude(normalized);
   };
 }
