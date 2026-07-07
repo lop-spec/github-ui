@@ -239,6 +239,19 @@ export class CodexService extends EventEmitter {
     };
   }
 
+  private activeBroadcastContext(payload: Record<string, unknown> = {}): Record<string, unknown> {
+    const resumePath = this.isExistingResumePath(this.lastResumePath) ? this.lastResumePath : null;
+    const threadId = typeof payload.threadId === 'string' && payload.threadId ? payload.threadId : this.activeThreadId;
+    const turnId = typeof payload.turnId === 'string' && payload.turnId ? payload.turnId : this.activeTurnId;
+    return {
+      ...payload,
+      resume_path: typeof payload.resume_path === 'string' ? payload.resume_path : resumePath,
+      sessionPath: typeof payload.sessionPath === 'string' ? payload.sessionPath : resumePath,
+      threadId: threadId || null,
+      turnId: turnId || null
+    };
+  }
+
   public async ensureBackendReady(): Promise<any> {
     if (!this.useAppServerBackend()) {
       return { ok: true, backend: 'exec', running: this.isRunning() };
@@ -321,7 +334,7 @@ export class CodexService extends EventEmitter {
     const ok = this.appServer.resolveServerRequest(request.requestId, result);
     if (!ok) return false;
     this.pendingUserInputs.delete(request.requestId);
-    this.emit('broadcast', 'server_request_resolved', { requestId: request.requestId });
+    this.emit('broadcast', 'server_request_resolved', this.activeBroadcastContext({ requestId: request.requestId }));
     this.emit('status_update');
     return true;
   }
@@ -1009,7 +1022,7 @@ export class CodexService extends EventEmitter {
       createdAt: new Date().toISOString()
     };
     this.pendingUserInputs.set(pending.requestId, pending);
-    this.emit('broadcast', 'server_request', pending);
+    this.emit('broadcast', 'server_request', this.activeBroadcastContext(pending as unknown as Record<string, unknown>));
     this.emit('status_update');
   }
 
@@ -1020,7 +1033,7 @@ export class CodexService extends EventEmitter {
       const requestId = String(params.requestId || params.id || '');
       if (requestId) {
         this.pendingUserInputs.delete(requestId);
-        this.emit('broadcast', 'server_request_resolved', { requestId });
+        this.emit('broadcast', 'server_request_resolved', this.activeBroadcastContext({ requestId }));
         this.emit('status_update');
       }
       return;
@@ -1052,7 +1065,7 @@ export class CodexService extends EventEmitter {
       return;
     }
     if (method === 'item/agentMessage/delta') {
-      this.emit('broadcast', 'delta', { text: String(params.delta || '') });
+      this.emit('broadcast', 'delta', this.activeBroadcastContext({ text: String(params.delta || '') }));
       return;
     }
     if (method === 'item/completed') {
@@ -1077,24 +1090,24 @@ export class CodexService extends EventEmitter {
       const text = String(item.text);
       saveMemoryFactsFromText(text);
       if (this.activeThreadId) this.lastAgentMessageByThread.set(this.activeThreadId, text);
-      this.emit('broadcast', 'message', { text });
+      this.emit('broadcast', 'message', this.activeBroadcastContext({ text }));
       this.emit('status_update');
       return;
     }
     if (item.type === 'commandExecution') {
       const suffix = item.exitCode == null ? '' : `\nexit=${item.exitCode}`;
-      this.emit('broadcast', 'timeline_item', { role: 'tool', kind: 'commandExecution', title: item.command || 'Command', text: item.command || 'command', detail: `${item.command || ''}${suffix}`, status: item.status, metadata: { cwd: item.cwd, exitCode: item.exitCode } });
+      this.emit('broadcast', 'timeline_item', this.activeBroadcastContext({ role: 'tool', kind: 'commandExecution', title: item.command || 'Command', text: item.command || 'command', detail: `${item.command || ''}${suffix}`, status: item.status, metadata: { cwd: item.cwd, exitCode: item.exitCode } }));
       return;
     }
     if (item.type === 'mcpToolCall' || item.type === 'dynamicToolCall' || item.type === 'fileChange' || item.type === 'webSearch') {
-      this.emit('broadcast', 'timeline_item', {
+      this.emit('broadcast', 'timeline_item', this.activeBroadcastContext({
         role: 'tool',
         kind: item.type,
         title: item.tool || item.query || item.type,
         text: item.tool || item.query || item.status || item.type,
         detail: this.timelineDetail(item),
         status: item.status
-      });
+      }));
     }
   }
 
@@ -1202,11 +1215,11 @@ export class CodexService extends EventEmitter {
   }
 
   private broadcastUserInput(input: PendingInput): void {
-    this.emit('broadcast', 'user_message', {
+    this.emit('broadcast', 'user_message', this.activeBroadcastContext({
       text: input.text,
       turnId: this.activeTurnId,
       attachments: input.attachments.map(({ kind, name, url }) => ({ kind, name, url }))
-    });
+    }));
   }
 
   private sandboxPolicy(mode: string): any {
@@ -1470,7 +1483,7 @@ export class CodexService extends EventEmitter {
     if (item.type === 'agent_message' && item.text) {
       const text = String(item.text);
       saveMemoryFactsFromText(text);
-      this.emit('broadcast', 'message', { text });
+      this.emit('broadcast', 'message', this.activeBroadcastContext({ text }));
       this.emit('status_update');
       return;
     }
