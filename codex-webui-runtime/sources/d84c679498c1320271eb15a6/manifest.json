@@ -13,7 +13,7 @@
     "workspacePath": "C:\\Users\\lop\\Documents\\Codex\\github-ui",
     "scope": "source-rules-skills"
   },
-  "generatedAt": "2026-07-07T08:24:10.653Z",
+  "generatedAt": "2026-07-07T08:24:28.041Z",
   "fullSnapshot": true,
   "mergePolicy": {
     "webui-source": "remote-newer-wins-then-verify",
@@ -44,8 +44,8 @@
     },
     {
       "path": "Codex-webui-react/docs/source-to-target-ledger.md",
-      "sha": "017cd681245aa1a8311a843593b088a2468c20b0",
-      "size": 10170,
+      "sha": "3cfbc089f467b27092593ed3ee4d941bf6f6d531",
+      "size": 10222,
       "category": "webui-source"
     },
     {
