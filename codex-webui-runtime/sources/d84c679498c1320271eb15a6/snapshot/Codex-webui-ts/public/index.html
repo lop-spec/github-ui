@@ -85,6 +85,14 @@
               <span id="threadMeta">等待连接</span>
             </div>
           </div>
+          <div class="question-jump" role="group" aria-label="对话定位">
+            <button type="button" class="question-jump-btn" id="questionJumpUp" title="定位上一个提问" aria-label="定位上一个提问" disabled>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button type="button" class="question-jump-btn" id="questionJumpDown" title="定位下一个回复结束" aria-label="定位下一个回复结束" disabled>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M19 12l-7 7-7-7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
           <div class="top-right">
             <span class="pill" id="resumePill">未恢复</span>
             <button class="ghost-btn" id="restartBtn" title="重启整个 WebUI 服务">
