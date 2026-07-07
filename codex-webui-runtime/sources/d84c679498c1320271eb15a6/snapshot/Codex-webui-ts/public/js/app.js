@@ -1,4 +1,4 @@
-const CLIENT_BUILD = '20260707-question-jump-composer-v2';
+const CLIENT_BUILD = '20260707-local-dir-open-v4';
       document.documentElement.dataset.webuiBuild = CLIENT_BUILD;
       const DEBUG_NO_EVENTS = new URLSearchParams(location.search).has('debug_no_events');
       const SIDEBAR_VISIBLE_LIMIT = 10;
@@ -1704,9 +1704,13 @@ const CLIENT_BUILD = '20260707-question-jump-composer-v2';
       async function openMessageLocalPath(localPath) {
         try {
           const data = await openPreviewPanel(localPath);
-          if (data?.kind === 'directory' && data.path) await openLocalPath(data.path);
-        } catch (error) {
-          addSystem(`预览本地路径失败：${error.message || error}`, true);
+          if (data?.kind === 'directory' && data.path) {
+            closeModal('previewModal');
+            await openLocalPath(data.path);
+          }
+        } catch {
+          closeModal('previewModal');
+          await openLocalPath(localPath);
         }
       }
       async function openPreviewExternal() {
