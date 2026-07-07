@@ -12,6 +12,7 @@ const HISTORY_FILE = process.env.CODEX_WEBUI_HISTORY_FILE
   : path.resolve(__dirname, '../../history.json');
 const SESS_ROOT = path.join(os.homedir(), '.codex', 'sessions');
 const DEFAULT_SESSION_MESSAGE_LIMIT = 120;
+const SESSION_TITLE_MAX_CHARS = 30;
 const sessionSummaryCache = new Map<string, { mtimeMs: number; size: number; summary: Pick<SessionEntry, 'title' | 'cwd' | 'messageCount'> }>();
 const sessionMessagesCache = new Map<string, { mtimeMs: number; size: number; messages: Message[] }>();
 
@@ -41,6 +42,23 @@ export const isWithinSessions = (p: string): boolean => p ? comparablePath(p).st
 
 function normalizeText(value: unknown): string {
   return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function titleCharLength(value: string): number {
+  return [...value].length;
+}
+
+function trimTitleChars(value: string, max = SESSION_TITLE_MAX_CHARS): string {
+  const chars = [...String(value || '').trim()];
+  if (chars.length <= max) return chars.join('');
+  return `${chars.slice(0, Math.max(0, max - 1)).join('').trim()}…`;
+}
+
+function joinTitleClauses(parts: string[]): string {
+  return parts.reduce((out, part) => {
+    if (!out) return part;
+    return /[A-Za-z0-9]$/.test(out) && /^[A-Za-z0-9]/.test(part) ? `${out} ${part}` : `${out}${part}`;
+  }, '');
 }
 
 function stripInternalMessageBlocks(value: unknown): string {
