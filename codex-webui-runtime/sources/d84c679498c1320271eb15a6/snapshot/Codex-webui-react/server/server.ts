@@ -55,7 +55,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const PORT = process.env.PORT ? Number(process.env.PORT) : 5055;
+const PORT = process.env.PORT ? Number(process.env.PORT) : 5155;
 const HOST = process.env.HOST || '0.0.0.0';
 const TOKEN = process.env.WEBUI_TOKEN || '';
 const PUBLIC_AUTH_USER = process.env.CODEX_WEBUI_PUBLIC_USER || 'lop';
@@ -65,9 +65,9 @@ const AUTO_RECOVER_INTERRUPTED_TURNS = (() => {
   const raw = String(process.env.CODEX_WEBUI_AUTO_RECOVER || '').trim().toLowerCase();
   if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
   if (['0', 'false', 'no', 'off'].includes(raw)) return false;
-  return PORT === 5055;
+  return PORT === 5155;
 })();
-const UI_BUILD = '20260707-local-dir-open-v5';
+const UI_BUILD = '20260707-session-title-v1';
 const STATIC_ASSETS = ['index.html', 'css/app.css', 'js/app.js', 'js/transfer.js'];
 const UPLOAD_DIR = process.env.CODEX_WEBUI_UPLOADS ? path.resolve(process.env.CODEX_WEBUI_UPLOADS) : path.resolve(process.cwd(), 'uploads');
 const SESSIONS_ROOT = path.join(os.homedir(), '.codex', 'sessions');
