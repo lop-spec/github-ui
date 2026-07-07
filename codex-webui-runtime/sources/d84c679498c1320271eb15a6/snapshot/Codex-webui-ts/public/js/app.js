@@ -3721,12 +3721,13 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         btn.className = `thread-item ${sameSessionPath(currentResumePath, s.path) ? 'active' : ''} ${running ? 'thread-item-running' : ''}`;
         btn.dataset.sessionKey = sessionDomKey(s.path);
         btn.setAttribute('aria-current', sameSessionPath(currentResumePath, s.path) ? 'true' : 'false');
-        btn.title = running ? '运行中，点击恢复会话；右键打开菜单' : '右键打开菜单';
+        const titleText = sessionTitle(s);
+        btn.title = `${titleText}\n${running ? '运行中，点击恢复会话；右键打开菜单' : '点击恢复会话；右键打开菜单'}`;
         const count = s.messageCount ? `${s.messageCount} 条` : toKB(s.size);
         const status = running
           ? '<span class="session-running"><span class="session-running-dot"></span>运行中</span>'
           : `<span class="pill">${escapeHtml(count)}</span>`;
-        btn.innerHTML = `<span class="item-main"><span class="item-title">${escapeHtml(sessionTitle(s))}</span><span class="item-sub">${sessionSubMarkup(s)}</span></span>${status}`;
+        btn.innerHTML = `<span class="item-main"><span class="item-title">${escapeHtml(titleText)}</span><span class="item-sub">${sessionSubMarkup(s)}</span></span>${status}`;
         btn.addEventListener('click', async () => {
           await switchToSession(s);
         });
@@ -4339,13 +4340,14 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'workspace-thread-button';
-        button.title = '点击恢复会话；右键打开菜单';
+        const titleText = sessionTitle(thread);
+        button.title = `${titleText}\n点击恢复会话；右键打开菜单`;
         const running = isRunningSession(thread);
         const threadMs = sessionTimeMs(thread);
         const status = running
           ? '<span class="workspace-thread-badge workspace-thread-badge-running">运行中</span>'
           : `<span class="workspace-thread-meta relative-time" data-relative-ms="${threadMs}">${escapeHtml(relativeTime(threadMs))}</span>`;
-        button.innerHTML = `<span class="workspace-thread-title-row"><span class="workspace-thread-title">${escapeHtml(sessionTitle(thread))}</span>${status}</span>`;
+        button.innerHTML = `<span class="workspace-thread-title-row"><span class="workspace-thread-title">${escapeHtml(titleText)}</span>${status}</span>`;
         button.addEventListener('click', async () => {
           await switchToSession({ ...thread, cwd: thread.cwd || rootWorkdir });
         });
