@@ -1,4 +1,4 @@
-const CLIENT_BUILD = '20260707-question-jump-v1';
+const CLIENT_BUILD = '20260707-question-jump-composer-v2';
       document.documentElement.dataset.webuiBuild = CLIENT_BUILD;
       const DEBUG_NO_EVENTS = new URLSearchParams(location.search).has('debug_no_events');
       const SIDEBAR_VISIBLE_LIMIT = 10;
@@ -3060,15 +3060,45 @@ const CLIENT_BUILD = '20260707-question-jump-v1';
       function questionNavOffsetBottom(node, timeline = $('timeline')) {
         return questionNavOffsetTop(node, timeline) + node.getBoundingClientRect().height;
       }
+      function questionNavAnswerTarget(answer) {
+        const markers = /(^|\s|[：:。#>*\-\u3000])(?:结论|总结|当前结果|最终结果|最终结论|解决方案|重点|小结|Conclusion|Summary|Result)(?=\s|[：:。,.，、]|$)/i;
+        const blocks = [...answer.querySelectorAll('.message-text h1, .message-text h2, .message-text h3, .message-text h4, .message-text p, .message-text li, .message-text blockquote, .message-text table, .message-text pre')]
+          .filter((node) => {
+            const rect = node.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0 && markers.test(node.textContent || '');
+          });
+        return blocks.at(-1) || answer;
+      }
       function questionNavState() {
         const timeline = $('timeline');
         const top = timeline.scrollTop;
         const bottom = top + timeline.clientHeight;
         const questions = questionNavNodes('.bubble.user');
-        const answers = questionNavNodes('.bubble.agent');
+        const answers = questionNavNodes('.bubble.agent').filter((node) => node.dataset.status !== 'streaming');
         const previousQuestion = [...questions].reverse().find((node) => questionNavOffsetTop(node, timeline) < top - 12) || null;
-        const nextAnswer = answers.find((node) => questionNavOffsetBottom(node, timeline) > bottom + 12) || null;
-        return { previousQuestion, nextAnswer, questions, answers };
+        const nextAnswerState = answers
+          .map((answer) => {
+            const target = questionNavAnswerTarget(answer);
+            const hasConclusionTarget = target !== answer;
+            const targetPosition = hasConclusionTarget
+              ? questionNavOffsetTop(target, timeline)
+              : questionNavOffsetBottom(answer, timeline);
+            return {
+              answer,
+              target,
+              align: hasConclusionTarget ? 'start' : 'end',
+              position: targetPosition
+            };
+          })
+          .find((item) => item.position > bottom + 12) || null;
+        return {
+          previousQuestion,
+          nextAnswer: nextAnswerState?.answer || null,
+          nextAnswerTarget: nextAnswerState?.target || null,
+          nextAnswerAlign: nextAnswerState?.align || 'end',
+          questions,
+          answers
+        };
       }
       function setQuestionJumpButton(button, enabled, activeTitle, emptyTitle) {
         if (!button) return;
@@ -3082,7 +3112,7 @@ const CLIENT_BUILD = '20260707-question-jump-v1';
         questionJumpUpdateFrame = 0;
         const state = questionNavState();
         setQuestionJumpButton(questionJumpUp, Boolean(state.previousQuestion), '定位上一个提问', '没有上一个提问');
-        setQuestionJumpButton(questionJumpDown, Boolean(state.nextAnswer), '定位下一个回复结束', '没有下一个回复结束');
+        setQuestionJumpButton(questionJumpDown, Boolean(state.nextAnswerTarget), '定位下一个回复结论或结尾', '没有下一个回复结论或结尾');
       }
       function scheduleQuestionJumpUpdate() {
         if (questionJumpUpdateFrame) return;
@@ -3095,7 +3125,7 @@ const CLIENT_BUILD = '20260707-question-jump-v1';
         target.classList.add('question-nav-target');
         questionNavPulseTimer = window.setTimeout(() => target.classList.remove('question-nav-target'), 700);
       }
-      function scrollToQuestionNavTarget(target, align = 'start') {
+      function scrollToQuestionNavTarget(target, align = 'start', highlight = target) {
         if (!target) {
           updateQuestionJumpControls();
           return;
@@ -3110,13 +3140,13 @@ const CLIENT_BUILD = '20260707-question-jump-v1';
           : top - margin;
         const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
         timeline.scrollTo({ top: Math.max(0, Math.min(maxTop, nextTop)), behavior });
-        flashQuestionNavTarget(target);
+        flashQuestionNavTarget(highlight);
         window.setTimeout(scheduleQuestionJumpUpdate, behavior === 'smooth' ? 220 : 0);
       }
       function jumpQuestionNavigation(direction) {
         const state = questionNavState();
         if (direction === 'up') scrollToQuestionNavTarget(state.previousQuestion, 'start');
-        else scrollToQuestionNavTarget(state.nextAnswer, 'end');
+        else scrollToQuestionNavTarget(state.nextAnswerTarget, state.nextAnswerAlign, state.nextAnswer);
       }
       function transcriptPageEndpoint(path, before = null) {
         const params = new URLSearchParams({ limit: String(TRANSCRIPT_PAGE_LIMIT) });
