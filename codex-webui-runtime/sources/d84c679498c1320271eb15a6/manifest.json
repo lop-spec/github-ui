@@ -13,7 +13,7 @@
     "workspacePath": "C:\\Users\\lop\\Documents\\Codex\\github-ui",
     "scope": "source-rules-skills"
   },
-  "generatedAt": "2026-07-07T06:11:57.001Z",
+  "generatedAt": "2026-07-07T06:12:54.537Z",
   "fullSnapshot": true,
   "mergePolicy": {
     "webui-source": "remote-newer-wins-then-verify",
@@ -22,7 +22,7 @@
     "local-machine": "do-not-cross-machine-apply-use-examples",
     "artifacts": "never-upload-never-apply"
   },
-  "fileCount": 131,
+  "fileCount": 132,
   "files": [
     {
       "path": ".gitignore",
@@ -64,6 +64,12 @@
       "path": "Codex-webui-react/RULES.md",
       "sha": "88b2624b7a12bbbb04266c4fc117b65993d3d071",
       "size": 2932,
+      "category": "webui-source"
+    },
+    {
+      "path": "Codex-webui-react/scripts/generate-legacy-shell-once.mjs",
+      "sha": "73dc74145db77f3806ba3ca3532395dd26b91099",
+      "size": 198,
       "category": "webui-source"
     },
     {
@@ -224,8 +230,8 @@
     },
     {
       "path": "Codex-webui-react/src/client/legacy-shell.ts",
-      "sha": "cdb204757ce4ff7f4513a05e1031737dacecc67e",
-      "size": 37274,
+      "sha": "abfc10b0e75d4c813b41e7f689b884da71b762a3",
+      "size": 471,
       "category": "webui-source"
     },
     {
