@@ -2,7 +2,7 @@ import * as React from 'react';
 import { legacyShellHtml } from '@/legacy-shell';
 
 const LEGACY_SCRIPT_SOURCES = [
-  '/js/app.js?v=react-parity-20260705',
+  '/js/app.js?v=20260707-guidance-echo-v1',
   '/js/transfer.js?v=react-parity-20260705'
 ];
 const LEGACY_STYLESHEET_HREF = '/css/app.css?v=react-parity-20260705';

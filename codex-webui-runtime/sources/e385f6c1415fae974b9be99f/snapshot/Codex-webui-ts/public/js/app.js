@@ -1,4 +1,4 @@
-const CLIENT_BUILD = '20260706-reply-layout-v1';
+const CLIENT_BUILD = '20260707-guidance-echo-v1';
       document.documentElement.dataset.webuiBuild = CLIENT_BUILD;
       const DEBUG_NO_EVENTS = new URLSearchParams(location.search).has('debug_no_events');
       const SIDEBAR_VISIBLE_LIMIT = 10;
