@@ -1071,7 +1071,7 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
         if (button) button.disabled = true;
         try {
           const result = await postJsonEndpoint(endpoint, {});
-          addSystem(`已请求${label}整个 WebUI 服务。后台脚本会检查 5055、5056、自动续跑状态并重新拉起独立 App。`);
+          addSystem(`已请求${label}整个 WebUI 服务。后台脚本会检查 5155、5156、自动续跑状态并重新拉起独立 App。`);
           return result;
         } catch (error) {
           addSystem(`${label} WebUI 服务失败：${error.message || error}`, true);
