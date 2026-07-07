@@ -851,11 +851,17 @@ function windowsPowerShellCommand(): string {
   return fs.existsSync(powershell) ? powershell : 'powershell.exe';
 }
 
-function windowsExplorerCommand(): string {
-  const systemRoot = process.env.SystemRoot || 'C:\\Windows';
-  const explorer = path.join(systemRoot, 'explorer.exe');
-  return fs.existsSync(explorer) ? explorer : 'explorer.exe';
+function shellExecuteWindowsScript(targetPath: string, kind: OpenTarget['kind']): string {
+  const verb = kind === 'file' ? 'open' : 'explore';
+  return [
+    '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8',
+    '$shell = New-Object -ComObject Shell.Application',
+    `$shell.ShellExecute(${JSON.stringify(targetPath)}, '', '', ${JSON.stringify(verb)}, 4)`
+  ].join('; ');
 }
+
+const recentLocalPathOpens = new Map<string, number>();
+const LOCAL_PATH_OPEN_DEDUPE_MS = 1500;
 
 function pickProjectDirectory(): Promise<string | null> {
   const override = resolveProjectPath(process.env.CODEX_WEBUI_PICK_DIRECTORY);
@@ -895,11 +901,15 @@ function pickProjectDirectory(): Promise<string | null> {
 function openLocalPath(targetPath: string, kind: OpenTarget['kind'] = 'directory'): Promise<void> {
   const override = process.env.CODEX_WEBUI_OPEN_COMMAND;
   const windowsOpen = !override && process.platform === 'win32';
-  const command = override || (windowsOpen ? windowsExplorerCommand() : process.platform === 'darwin' ? 'open' : 'xdg-open');
+  const now = Date.now();
+  const dedupeKey = `${kind}:${process.platform === 'win32' ? targetPath.toLowerCase() : targetPath}`;
+  if (now - (recentLocalPathOpens.get(dedupeKey) || 0) < LOCAL_PATH_OPEN_DEDUPE_MS) return Promise.resolve();
+  recentLocalPathOpens.set(dedupeKey, now);
+  const command = override || (windowsOpen ? windowsPowerShellCommand() : process.platform === 'darwin' ? 'open' : 'xdg-open');
   const args = override
     ? [...readJsonArrayEnv('CODEX_WEBUI_OPEN_ARGS_PREFIX_JSON'), targetPath]
     : windowsOpen
-      ? (kind === 'file' ? ['/select,', targetPath] : [targetPath])
+      ? ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-Command', shellExecuteWindowsScript(targetPath, kind)]
       : [...readJsonArrayEnv('CODEX_WEBUI_OPEN_ARGS_PREFIX_JSON'), targetPath];
   return new Promise((resolveOpen, reject) => {
     const child = spawn(command, args, {
