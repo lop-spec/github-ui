@@ -5101,10 +5101,12 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
         });
         es.addEventListener('system', (event) => {
           const data = JSON.parse(event.data);
+          if (!shouldRenderSessionEvent(data)) return;
           addSystem(data.text || '');
         });
         es.addEventListener('stderr', (event) => {
           const data = JSON.parse(event.data);
+          if (!shouldRenderSessionEvent(data)) return;
           addSystem(data.text || '', true);
           if (/error|failed|失败|异常/i.test(data.text || '')) {
             deliverAppNotification({ title: 'Agent Error', body: data.text || '', kind: 'error', minVisible: false });
@@ -5112,11 +5114,13 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
         });
         es.addEventListener('tool', (event) => {
           const data = JSON.parse(event.data);
+          if (!shouldRenderSessionEvent(data)) return;
           addTool(data.name || '工具', data.detail || '');
         });
         es.addEventListener('timeline_item', (event) => {
           const data = JSON.parse(event.data);
-          addTimelineItem(data);
+          if (!shouldRenderSessionEvent(data)) return;
+          addTimelineItem(data, { sessionPath: sessionPathForStreamingEvent(data) || currentResumePath });
           const serialized = JSON.stringify(data);
           if (/approval|elicitation|userInput|question/i.test(serialized)) {
             deliverAppNotification({ title: 'Input needed', body: data.text || data.detail || data.title || 'Your input is needed.', kind: 'warning', minVisible: false });
@@ -5127,6 +5131,7 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
         });
         es.addEventListener('server_request', (event) => {
           const data = JSON.parse(event.data);
+          if (!shouldRenderSessionEvent(data)) return;
           if (data.kind === 'userInput' && Array.isArray(data.questions)) {
             setPendingUserInputRequest(data);
             deliverAppNotification({ title: 'Input needed', body: data.questions[0]?.question || '需要补充信息。', kind: 'warning', minVisible: false });
@@ -5134,6 +5139,7 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
         });
         es.addEventListener('server_request_resolved', (event) => {
           const data = JSON.parse(event.data);
+          if (!shouldRenderSessionEvent(data)) return;
           clearPendingUserInputRequest(data.requestId || '');
         });
         es.addEventListener('user_message', (event) => {
