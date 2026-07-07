@@ -67,7 +67,7 @@ const AUTO_RECOVER_INTERRUPTED_TURNS = (() => {
   if (['0', 'false', 'no', 'off'].includes(raw)) return false;
   return PORT === 5055;
 })();
-const UI_BUILD = '20260707-local-dir-open-v5';
+const UI_BUILD = '20260707-session-title-v1';
 const STATIC_ASSETS = ['index.html', 'css/app.css', 'js/app.js', 'js/transfer.js'];
 const UPLOAD_DIR = process.env.CODEX_WEBUI_UPLOADS ? path.resolve(process.env.CODEX_WEBUI_UPLOADS) : path.resolve(process.cwd(), 'uploads');
 const SESSIONS_ROOT = path.join(os.homedir(), '.codex', 'sessions');
@@ -2210,12 +2210,14 @@ const server = http.createServer((req, res) => {
           pinned: pinned.has(pathIdentity(session.path))
         };
       });
+    const lastPathRaw = codexService.getDisplayResumePath();
+    const lastPath = lastPathRaw && !archived.has(pathIdentity(lastPathRaw)) ? lastPathRaw : null;
     return sendJson(res, 200, {
       ok: true,
       total: list.length,
       titled: list.filter((session) => Boolean(session.title)).length,
       sessions: list,
-      current: codexService.getDisplayResumePath(),
+      current: lastPath,
       workdir: codexService.getWorkdir(),
       currentRoot
     });
