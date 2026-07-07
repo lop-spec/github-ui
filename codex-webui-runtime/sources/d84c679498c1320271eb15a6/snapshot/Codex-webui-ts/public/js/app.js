@@ -3933,6 +3933,8 @@ const CLIENT_BUILD = '20260707-local-path-preview-v1';
           if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
           state.historyProject = data.historyProject || state.historyProject;
           state.items = state.items.filter((item) => !sameSessionPath(item.recycledPath, target.recycledPath));
+          if (target.targetPath) optimisticDeletedSessionPaths.delete(normalizeSessionPath(target.targetPath));
+          if (data.session?.path) optimisticDeletedSessionPaths.delete(normalizeSessionPath(data.session.path));
           addSystem(`已恢复到历史对话：${target.title || target.name || '历史对话'}`);
           await Promise.all([loadSessions(), loadProjects()]);
         } catch (error) {
@@ -5060,6 +5062,7 @@ const CLIENT_BUILD = '20260707-local-path-preview-v1';
             const previousRuntimeResumePath = activeRuntimeResumePath;
             const previousRunning = codexRunning;
             const nextRuntimeResumePath = data.resume_path || null;
+            const runtimeSessionPendingDeleted = nextRuntimeResumePath && optimisticDeletedSessionPaths.has(normalizeSessionPath(nextRuntimeResumePath));
             const wasFollowingRuntimeSession = !currentResumePath || !previousRuntimeResumePath || sameSessionPath(currentResumePath, previousRuntimeResumePath);
             activeRuntimeResumePath = nextRuntimeResumePath;
             currentWorkdir = data.workdir || currentWorkdir;
@@ -5073,7 +5076,7 @@ const CLIENT_BUILD = '20260707-local-path-preview-v1';
             }
             updateComposerControls();
             renderQueuePanel();
-            const shouldFollowRuntimeSession = wasFollowingRuntimeSession || !currentResumePath || sameSessionPath(currentResumePath, activeRuntimeResumePath);
+            const shouldFollowRuntimeSession = !runtimeSessionPendingDeleted && (wasFollowingRuntimeSession || !currentResumePath || sameSessionPath(currentResumePath, activeRuntimeResumePath));
             if (shouldFollowRuntimeSession) currentResumePath = activeRuntimeResumePath;
             resumePill.textContent = data.resumed && shouldFollowRuntimeSession ? '已恢复' : '新会话';
             const active = shouldFollowRuntimeSession ? sessionsCache.find((s) => sameSessionPath(s.path, currentResumePath)) : null;
