@@ -264,9 +264,11 @@ export const useWebuiStore = create<WebuiState>((set, get) => ({
       set((state) => {
         if (!shouldRenderSessionEvent(data, state)) return {};
         const text = data.text || '';
-        if (!state.streamMessageId) {
+        const nextStreamKey = streamEventKey(data, state);
+        if (!nextStreamKey) return {};
+        if (!state.streamMessageId || state.streamMessageKey !== nextStreamKey) {
           const item = { ...msg('agent', text, data), status: 'streaming' };
-          return { messages: [...state.messages, item], streamMessageId: item.id };
+          return { messages: [...state.messages, item], streamMessageId: item.id, streamMessageKey: nextStreamKey };
         }
         return {
           messages: state.messages.map((item) => (item.id === state.streamMessageId ? { ...item, text: item.text + text, status: 'streaming' } : item))
@@ -277,12 +279,16 @@ export const useWebuiStore = create<WebuiState>((set, get) => ({
       const data = JSON.parse((event as MessageEvent).data);
       set((state) => {
         if (!shouldRenderSessionEvent(data, state)) return {};
-        if (state.streamMessageId) {
+        const nextStreamKey = streamEventKey(data, state);
+        if (!nextStreamKey) return {};
+        if (state.streamMessageId && state.streamMessageKey === nextStreamKey) {
           return {
             messages: state.messages.map((item) => (item.id === state.streamMessageId ? { ...item, status: 'done', text: item.text || data.text || '' } : item)),
-            streamMessageId: null
+            streamMessageId: null,
+            streamMessageKey: null
           };
         }
+        if (!data.text) return {};
         return { messages: [...state.messages, msg('agent', data.text || '', data)] };
       });
     });
@@ -312,7 +318,8 @@ export const useWebuiStore = create<WebuiState>((set, get) => ({
         status: item.status || 'done'
       })),
       currentResumePath: responsePath,
-      streamMessageId: null
+      streamMessageId: null,
+      streamMessageKey: null
     });
   },
   resumeSession: async (session) => {
@@ -323,7 +330,7 @@ export const useWebuiStore = create<WebuiState>((set, get) => ({
   },
   newChat: async () => {
     await postJson('/new-chat');
-    set({ messages: [], currentResumePath: null, runtimeResumePath: null, streamMessageId: null });
+    set({ messages: [], currentResumePath: null, runtimeResumePath: null, streamMessageId: null, streamMessageKey: null });
     await Promise.allSettled([get().loadSessions(), get().loadProjects()]);
   },
   sendMessage: async () => {

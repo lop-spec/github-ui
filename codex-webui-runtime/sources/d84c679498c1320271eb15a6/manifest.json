@@ -13,7 +13,7 @@
     "workspacePath": "C:\\Users\\lop\\Documents\\Codex\\github-ui",
     "scope": "source-rules-skills"
   },
-  "generatedAt": "2026-07-07T09:17:49.875Z",
+  "generatedAt": "2026-07-07T09:18:10.886Z",
   "fullSnapshot": true,
   "mergePolicy": {
     "webui-source": "remote-newer-wins-then-verify",
@@ -260,8 +260,8 @@
     },
     {
       "path": "Codex-webui-react/src/client/store/webui-store.ts",
-      "sha": "91f28e31e1fadb46aa7e642280460918aad90d0e",
-      "size": 16605,
+      "sha": "602072f0b87ac529914dda76e82a73b7309719bc",
+      "size": 17047,
       "category": "webui-source"
     },
     {
