@@ -5343,6 +5343,18 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
       previewLoadBtn.addEventListener('click', () => loadQuickPreview().catch((error) => {
         if (previewPanel) previewPanel.innerHTML = `<div class="quick-preview-status quick-preview-error">预览失败：${escapeHtml(error.message || error)}</div>`;
       }));
+      previewPanel.addEventListener('click', (event) => {
+        const entry = event.target && event.target.closest ? event.target.closest('.quick-preview-entry') : null;
+        if (!entry) return;
+        event.preventDefault();
+        if (entry.dataset.kind === 'file') {
+          openLocalPath(entry.dataset.path || '');
+          return;
+        }
+        openPreviewPanel(entry.dataset.path || '').catch((error) => {
+          if (previewPanel) previewPanel.innerHTML = `<div class="quick-preview-status quick-preview-error">预览失败：${escapeHtml(error.message || error)}</div>`;
+        });
+      });
       previewOpenExternal.addEventListener('click', () => openPreviewExternal().catch((error) => addSystem(`外部打开失败：${error.message || error}`, true)));
       previewTargetInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
