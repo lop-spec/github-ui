@@ -13,7 +13,7 @@
     "workspacePath": "C:\\Users\\lop\\Documents\\Codex\\github-ui",
     "scope": "source-rules-skills"
   },
-  "generatedAt": "2026-07-07T08:34:34.582Z",
+  "generatedAt": "2026-07-07T08:35:11.739Z",
   "fullSnapshot": true,
   "mergePolicy": {
     "webui-source": "remote-newer-wins-then-verify",
@@ -746,8 +746,8 @@
     },
     {
       "path": "codex/skills/lop-winops/SKILL.md",
-      "sha": "478f57834efb79a7c9ff6661a19e5e124a802a54",
-      "size": 3357,
+      "sha": "669581e180a3ac05469c4a1ee4050638d1bc024d",
+      "size": 3686,
       "category": "rules"
     },
     {

@@ -20,6 +20,7 @@ Use this skill by default for Windows local OS work. The goal is to keep busines
 Prefer winops for:
 
 - `exec`: direct executable plus argv array, no shell body.
+- `exec.resolve`: inspect how winops resolves a bare tool name before running it.
 - `fs`: read, write, copy, move, delete, list, hash, path checks.
 - `open`: ShellExecute-style file, directory, or URL opening.
 - `registry`: query, set, delete, and enumerate registry values or keys.
@@ -33,6 +34,7 @@ Prefer winops for:
 ## Routing Rules
 
 - Use winops first even for simple reads, searches, copies, port checks, process checks, and external executable argv when the operation is part of a Windows local task.
+- Do not pre-run `where.exe` for normal tools such as `rg`, `node`, or `git`; pass the bare tool name to `exec.run` or inspect it with `exec.resolve`. Winops resolves through its tool cache, process/user/machine PATH, and common tool directories.
 - Allow `cmd`, `pwsh`, `nu`, or `nush` only for bootstrap, uncovered OS objects/APIs, or explicit shell reproduction requested by the user.
 - Do not add more shell escaping after a quote/encoding failure; move the payload into the job file.
 - Treat `run-argv.mjs` as legacy compatibility. New Windows reliability work must use `winops.exe`.
