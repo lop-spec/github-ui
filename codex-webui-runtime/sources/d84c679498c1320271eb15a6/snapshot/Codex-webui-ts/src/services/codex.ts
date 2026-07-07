@@ -368,7 +368,12 @@ export class CodexService extends EventEmitter {
     const ok = this.appServer.resolveServerRequest(request.requestId, result);
     if (!ok) return false;
     this.pendingUserInputs.delete(request.requestId);
-    this.emit('broadcast', 'server_request_resolved', this.activeBroadcastContext({ requestId: request.requestId }));
+    this.emit('broadcast', 'server_request_resolved', this.activeBroadcastContext({
+      requestId: request.requestId,
+      threadId: request.threadId,
+      turnId: request.turnId,
+      itemId: request.itemId
+    }));
     this.emit('status_update');
     return true;
   }
@@ -969,10 +974,12 @@ export class CodexService extends EventEmitter {
 
   private applyThreadState(thread: any): void {
     if (!thread || !thread.id) return;
-    this.activeThreadId = String(thread.id);
+    const threadId = String(thread.id);
+    this.activeThreadId = threadId;
     const resumePath = thread.path ? String(thread.path) : null;
     if (this.isExistingResumePath(resumePath)) {
       this.lastResumePath = resumePath;
+      this.bindThreadResumePath(threadId, resumePath);
       this.recordResume(this.lastResumePath);
     }
     this.applyThreadRuntimeState(thread);
@@ -1066,8 +1073,12 @@ export class CodexService extends EventEmitter {
     if (method === 'serverRequest/resolved') {
       const requestId = String(params.requestId || params.id || '');
       if (requestId) {
+        const pending = this.pendingUserInputs.get(requestId);
         this.pendingUserInputs.delete(requestId);
-        this.emit('broadcast', 'server_request_resolved', this.activeBroadcastContext({ requestId }));
+        this.emit('broadcast', 'server_request_resolved', this.activeBroadcastContext({
+          ...(pending ? { threadId: pending.threadId, turnId: pending.turnId, itemId: pending.itemId } : this.appNotificationContext(params)),
+          requestId
+        }));
         this.emit('status_update');
       }
       return;
@@ -1085,8 +1096,10 @@ export class CodexService extends EventEmitter {
       return;
     }
     if (method === 'turn/started') {
-      this.activeThreadId = params.threadId || this.activeThreadId;
-      this.activeTurnId = params.turn?.id || this.activeTurnId;
+      const context = this.appNotificationContext(params);
+      this.activeThreadId = this.nonEmptyString(context.threadId) || this.activeThreadId;
+      this.activeTurnId = this.nonEmptyString(context.turnId) || this.activeTurnId;
+      if (this.activeThreadId && this.isExistingResumePath(this.lastResumePath)) this.bindThreadResumePath(this.activeThreadId, this.lastResumePath);
       this.activeThreadRunning = true;
       this.activeStartedAtMs = Date.now();
       this.persistInterruptedTurnState('turn-started-notification');
@@ -1099,11 +1112,14 @@ export class CodexService extends EventEmitter {
       return;
     }
     if (method === 'item/agentMessage/delta') {
-      this.emit('broadcast', 'delta', this.activeBroadcastContext({ text: String(params.delta || '') }));
+      this.emit('broadcast', 'delta', this.activeBroadcastContext({
+        ...this.appNotificationContext(params),
+        text: String(params.delta || '')
+      }));
       return;
     }
     if (method === 'item/completed') {
-      this.handleAppCompletedItem(params.item || {});
+      this.handleAppCompletedItem(params.item || {}, this.appNotificationContext(params, params.item || {}));
       return;
     }
     if (method === 'error' || method === 'warning' || method === 'configWarning' || method === 'guardianWarning') {
@@ -1119,22 +1135,24 @@ export class CodexService extends EventEmitter {
     }
   }
 
-  private handleAppCompletedItem(item: any): void {
+  private handleAppCompletedItem(item: any, context: Record<string, unknown> = {}): void {
     if (item.type === 'agentMessage' && item.text) {
       const text = String(item.text);
       saveMemoryFactsFromText(text);
-      if (this.activeThreadId) this.lastAgentMessageByThread.set(this.activeThreadId, text);
-      this.emit('broadcast', 'message', this.activeBroadcastContext({ text }));
+      const threadId = this.nonEmptyString(context.threadId) || this.activeThreadId;
+      if (threadId) this.lastAgentMessageByThread.set(threadId, text);
+      this.emit('broadcast', 'message', this.activeBroadcastContext({ ...context, text }));
       this.emit('status_update');
       return;
     }
     if (item.type === 'commandExecution') {
       const suffix = item.exitCode == null ? '' : `\nexit=${item.exitCode}`;
-      this.emit('broadcast', 'timeline_item', this.activeBroadcastContext({ role: 'tool', kind: 'commandExecution', title: item.command || 'Command', text: item.command || 'command', detail: `${item.command || ''}${suffix}`, status: item.status, metadata: { cwd: item.cwd, exitCode: item.exitCode } }));
+      this.emit('broadcast', 'timeline_item', this.activeBroadcastContext({ ...context, role: 'tool', kind: 'commandExecution', title: item.command || 'Command', text: item.command || 'command', detail: `${item.command || ''}${suffix}`, status: item.status, metadata: { cwd: item.cwd, exitCode: item.exitCode } }));
       return;
     }
     if (item.type === 'mcpToolCall' || item.type === 'dynamicToolCall' || item.type === 'fileChange' || item.type === 'webSearch') {
       this.emit('broadcast', 'timeline_item', this.activeBroadcastContext({
+        ...context,
         role: 'tool',
         kind: item.type,
         title: item.tool || item.query || item.type,
