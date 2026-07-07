@@ -1,6 +1,6 @@
 ---
 name: lop-winops
-description: 'Use by default for Windows local OS operations, including command execution, file handling, ShellExecute/open, registry, service, process, port, text, JSON, archive, quote-sensitive, Chinese, regex, Markdown, path safety, or any case where cmd/pwsh/nu/nush should be avoided; prefer winops-mcp/MCP tool, otherwise run C:\Users\lop\.codex\tools\winops\winops.exe with UTF-8 job/result files.'
+description: 'Use by default for Windows local OS operations, including command execution, file handling, ShellExecute/open, registry, service, process, port, text, JSON, archive, quote-sensitive, Chinese, regex, Markdown, path safety, or any case where cmd/pwsh/nu/nush should be avoided; prefer native persistent winops-mcp/MCP tool, otherwise run C:\Users\lop\.codex\tools\winops\winops.exe with UTF-8 job/result files.'
 ---
 
 # lop-winops
@@ -9,7 +9,7 @@ Use this skill by default for Windows local OS work. The goal is to keep busines
 
 ## Required Workflow
 
-1. If a `winops-mcp` tool is available, call its `winops_run` tool with the job object. This is the most stable path because no `cmd`, `pwsh`, `nu`, or `nush` process is part of the task.
+1. If a native persistent `winops-mcp` tool is available, call its `winops_run` tool with the job object. This is the most stable path because no `cmd`, `pwsh`, `nu`, `nush`, or per-call `winops.exe` spawn is part of the task.
 2. If MCP is not loaded, write the operation as a UTF-8 job file, preferably under `C:\Users\lop\.codex\tmp\winops\`, then run `C:\Users\lop\.codex\tools\winops\winops.exe <job.json>`. If the current Codex executor needs a shell to start the exe, treat that shell as bootstrap only; do not put business payloads in it.
 3. Read the result JSON path printed by stdout, then inspect `ok`, `data`, `stdout`, `stderr`, and `error`.
 4. If the job mutates files, processes, services, or registry state, use a read-only query or dry-run first when feasible.
@@ -43,6 +43,7 @@ Prefer winops for:
 
 ## Verification
 
-- For the tool itself, run `node C:\Users\lop\.codex\tools\winops-src\test-winops.mjs`.
+- For the job-file tool itself, run `node C:\Users\lop\.codex\tools\winops-src\test-winops.mjs`.
+- For the native persistent MCP server, run `node C:\Users\lop\.codex\tools\winops-mcp\test.mjs`.
 - For a specific job, the minimum proof is `ok:true` in result JSON plus inspection of the returned fields that matter for the task.
 - For rules or skill changes, verify trigger text with `rg -n winops` across `AGENTS.md`, `rules\artifact-apk-windows.md`, parent `RULES.md`, and this skill.
