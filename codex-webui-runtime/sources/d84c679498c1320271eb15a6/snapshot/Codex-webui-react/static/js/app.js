@@ -1676,23 +1676,26 @@ const CLIENT_BUILD = '20260707-question-jump-composer-v2';
         const value = String(target || previewTargetInput?.value || '').trim();
         if (!value) {
           renderPreviewPanel(null);
-          return;
+          return null;
         }
         previewState.target = value;
         if (previewPanel) previewPanel.innerHTML = '<div class="quick-preview-status">正在读取预览...</div>';
         const data = await fetchJsonEndpoint(`/preview?target=${encodeURIComponent(value)}`);
         previewState.data = data;
         renderPreviewPanel(data);
+        return data;
       }
       async function openPreviewPanel(target = '') {
         openModal('previewModal');
         if (target && previewTargetInput) previewTargetInput.value = target;
-        if (target) await loadQuickPreview(target);
-        else renderPreviewPanel(previewState.data);
+        if (target) return await loadQuickPreview(target);
+        renderPreviewPanel(previewState.data);
+        return previewState.data;
       }
       async function openMessageLocalPath(localPath) {
         try {
-          await openPreviewPanel(localPath);
+          const data = await openPreviewPanel(localPath);
+          if (data?.kind === 'directory' && data.path) await openLocalPath(data.path);
         } catch (error) {
           addSystem(`预览本地路径失败：${error.message || error}`, true);
         }
