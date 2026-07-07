@@ -13,7 +13,7 @@
     "workspacePath": "C:\\Users\\lop\\Documents\\Codex\\github-ui",
     "scope": "source-rules-skills"
   },
-  "generatedAt": "2026-07-07T08:17:33.663Z",
+  "generatedAt": "2026-07-07T08:17:45.513Z",
   "fullSnapshot": true,
   "mergePolicy": {
     "webui-source": "remote-newer-wins-then-verify",
@@ -536,8 +536,8 @@
     },
     {
       "path": "Codex-webui-ts/src/utils/fs-helpers.ts",
-      "sha": "8e84d23474b77a140ee84f3d328980063e3b62fc",
-      "size": 22941,
+      "sha": "06015991f5493048b402fa5a39b5a05a6779fee7",
+      "size": 23036,
       "category": "webui-source"
     },
     {

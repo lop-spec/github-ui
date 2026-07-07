@@ -262,7 +262,7 @@ function readSessionSummary(filePath: string): Pick<SessionEntry, 'title' | 'cwd
     if (seenMessages.has(key)) return;
     seenMessages.add(key);
     messageCount++;
-    if (!title && role === 'user') title = text.slice(0, 88);
+    if (!title && role === 'user') title = summarizeSessionTitle(text);
   };
   try {
     const raw = fs.readFileSync(filePath, 'utf8');
@@ -289,6 +289,10 @@ function readSessionSummary(filePath: string): Pick<SessionEntry, 'title' | 'cwd
     }
   } catch {}
   return { title, cwd, messageCount };
+}
+
+export function clearSessionSummaryCache(): void {
+  sessionSummaryCache.clear();
 }
 
 function getSessionSummary(filePath: string, stat: fs.Stats): Pick<SessionEntry, 'title' | 'cwd' | 'messageCount'> {
