@@ -170,10 +170,9 @@
 ## 11. Windows 工具规则
 
 - 本节详细执行细则优先维护在 `C:\Users\lop\.codex\rules\artifact-apk-windows.md`；命中 Windows shell、路径、产物、APK/安装包任务时必须按需读取，不得把全文复制回全局常驻提示。
-- 按 2026-07-04 本机横评强制路由 shell：`cmd` 负责 shell 启动/短命令、固定字符串搜索、读文本、端口监听探测、小目录复制删除、`rg/curl/robocopy/where` 等简单外部 exe；`nu` 负责工具定位、大目录枚举、JSON/table 解析筛选、进程列表过滤、HTTP 响应解析和结构化管道。
-- 用户层禁用 `pwsh` 作为默认执行壳；除非上级安全规则、Windows 对象模型、注册表/服务/WMI/CIM、锁定文件/安全递归移动删除，或 `cmd/nu` 已验证无法表达，否则不得主动改用 `pwsh`。例外使用必须在回复或执行记录里说明原因。
-- 复杂 Windows 操作若涉及引号、反引号、空格、中文、JSON/HTML/Markdown/正则、文件读写/复制/删除、注册表、服务、进程或端口，先触发 `$lop-winops`，优先使用 `C:\Users\lop\.codex\tools\winops\winops.exe <job.json>`；复杂内容写 UTF-8 job/result 文件，不再经过 `cmd/pwsh/nu/nush` 解析。
-- 简单读文件、查文本、列目录、`rg/git/jq/where` 等外部工具必须使用 `cmd`；只有扁平命令体才“只传命令体”。引号、反引号、空格、转义、带空格路径、中文多词、管道、括号、重定向、嵌套引号、内联代码或 `.cmd` wrapper 必须先按专项规则的 cmd 统一语法转换处理，禁止归因给 `cmd` 本身。
+- Windows 本地操作默认 shellless：命令执行、文件、打开、注册表、服务、进程、端口、文本、JSON、压缩等一律先触发 `$lop-winops`，走 `C:\Users\lop\.codex\tools\winops\winops.exe <job.json>` 与 UTF-8 job/result 文件。
+- `cmd/pwsh/nu/nush` 只作 bootstrap 或明确例外：当前 Codex 执行工具需要宿主进程启动 winops、winops 尚未覆盖的系统对象/API、或用户点名复现 shell；例外必须说明原因，复杂业务内容不得进入 shell。
+- 2026-07-04 的 `cmd`/`nu` 横评只作为 legacy fallback 参考，不再作为默认路线；若 fallback 出现引号、反引号、空格、中文、管道、括号、重定向、内联代码、JSON/HTML/Markdown/正则或长参数，立即迁回 winops job/result。
 - 固定字符串搜索优先用无空格锚点或多个 `-e` 分开查；只有本层引号已验证稳定时才用 `rg -n -F -- "text" "file"`。正则用 `rg -n -- "pattern" "file"`；带空格、`|`、中文、引号、反引号、标点或外层执行器会拆引号时，必须改 pattern 文件或无空格关键词锚点，禁止切到 `pwsh` 逃避。
 - `node -e`/`python -c` 在 `cmd` 里只允许无内层引号、无模板字符串、无 JSON/HTML/正则、无路径、无中文、无多语句、输出不要求引号保真的短表达式；一旦输入或输出涉及引号、JSON、Markdown、代码片段、路径或原样文本，或出现拆引号、`SyntaxError`、`os error 123`、参数被拆，必须立即改临时 `.mjs`/`.py`、argv 或输入文件，禁止继续堆转义硬拼一行。
 - 大复制必须优先使用 `robocopy`；超大枚举、JSON/table、进程/HTTP 结构化管道必须优先使用 `nu`/Nushell，并按专项规则使用 `nu.exe --no-config-file --no-history --no-std-lib -c`。

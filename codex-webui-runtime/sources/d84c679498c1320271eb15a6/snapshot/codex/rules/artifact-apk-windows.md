@@ -4,14 +4,14 @@
 
 ## Windows 命令
 
-- 按 2026-07-04 本机横评强制路由 shell：`cmd` 负责 shell 启动/短命令、固定字符串搜索、读文本、端口监听探测、小目录复制删除、`rg/curl/robocopy/where` 等简单外部 exe；`nu` 负责工具定位、大目录枚举、JSON/table 解析筛选、进程列表过滤、HTTP 响应解析和结构化管道。
-- 用户层禁用 `pwsh` 作为默认执行壳；除非上级安全规则、Windows 对象模型、注册表/服务/WMI/CIM、锁定文件/安全递归移动删除，或 `cmd/nu` 已验证无法表达，否则不得主动改用 `pwsh`。例外使用必须说明原因。
-- 若任务目标是彻底避开 `cmd/pwsh/nu/nush` 的引号、转义或中文解析层，先触发 `$lop-winops`，首选 `C:\Users\lop\.codex\tools\winops\winops.exe <job.json>`；复杂内容只写 UTF-8 job 文件，主结果写 result.json，stdout 只作为结果路径提示。
+- Windows 本地操作默认 shellless：命令执行、文件、打开、注册表、服务、进程、端口、文本、JSON、zip/unzip 一律先触发 `$lop-winops`，首选 `C:\Users\lop\.codex\tools\winops\winops.exe <job.json>`；复杂内容只写 UTF-8 job 文件，主结果写 result.json，stdout 只作为结果路径提示。
+- `cmd/pwsh/nu/nush` 只允许三类例外：当前 Codex 执行工具需要宿主进程来启动 `winops.exe` 的 bootstrap；winops 尚未覆盖的系统对象/API；用户明确要求 shell 复现。例外必须说明原因，且复杂业务内容仍不得进入 shell 命令行。
+- 2026-07-04 的 `cmd`/`nu` 横评只保留为 legacy fallback 参考，不再作为默认路线：`cmd` 可处理极短只读外部命令，`nu` 可处理简单结构化过滤；一旦涉及引号、反引号、空格、中文、JSON/HTML/Markdown/正则、长参数或原样输出，立即回到 winops job。
 - `winops.exe` 适用：外部进程 argv 保真、文件读写/复制/移动/删除/hash、打开文件/目录/URL、注册表、服务、进程、端口、文本搜索替换、JSON 读写选择、zip/unzip；参数含空格/中文/引号/反引号/`&|()<>%!`、JSON/HTML/Markdown/正则、长参数、需要原样输出、或之前在 `cmd/nu` 中出现拆参/乱码/转义失败时，不再二次堆 shell 转义。
 - `run-argv.mjs` 仅作为旧兼容；新任务默认用 `winops.exe`。`.cmd/.bat` 默认拒绝，必须定位真实 `.exe/.js` 入口；确实必须跑 `.cmd/.bat` 时才回到显式 shell 例外并记录原因。
 - `winops.exe` job 必须把 `op`、`input`、路径和参数分开写；破坏性操作默认 dry-run，实际执行必须同时设置 `dryRun:false` 和 `confirm:true`；删除默认进 `%USERPROFILE%\.codex\quarantine\winops`，不得默认硬删。
-- 总原则：`cmd` 支持引号、反引号、空格和转义；失败默认是 Codex/JSON/PowerShell/Node/Markdown/正则等外层先吃掉字符，或没有按 cmd 语法生成，禁止把问题归因给 `cmd` 本身。
-- 统一转换顺序：先判断能否用 argv/参数数组/直接 EXE 入口，能用就不要拼 shell 字符串；必须走 `cmd` 时先写目标 cmd 标准形态，再只给当前执行器补一层外层引号；仍不稳定就生成临时 `.cmd`/参数文件/输入文件后用 `cmd` 执行，这仍然是 cmd 方案，不是绕开 cmd。
+- 总原则：最稳方案不是继续修 shell 转义，而是让业务输入完全退出 shell 命令行；失败默认按规则迁移到 winops job/result，不再归因给 `cmd`、`nu` 或外层转义。
+- legacy fallback 转换顺序：只有 winops 不覆盖或用户明确要求 shell 时，才生成目标 shell 标准形态；仍不稳定就停止堆转义，改成 winops job、参数文件或输入文件。
 - `cmd` 标准入口优先用 `cmd.exe /d /q /v:off /s /c "..."`；程序路径含空格时标准形态是 `cmd.exe /d /q /v:off /s /c ""C:\Program Files\Tool\tool.exe" "arg with space""`。在 `exec_command` 等外层还会解析引号的场景，先保留这个目标形态，再按外层要求把内层 `"` 成对加倍或改临时 `.cmd`，不要凭感觉混写。
 - 简单读文件、查文本、列目录、`rg/git/jq/where` 等外部工具必须用 `cmd`；`exec_command(shell="cmd")` 只用于无嵌套引号、无空格敏感参数、无 `|&<>()^%!` 控制符的扁平命令体。
 - cmd 元字符作字面量时用 caret 转义：`^&`、`^|`、`^<`、`^>`、`^(`、`^)`、`^^`。双引号内的元字符通常作为参数字符传给目标程序；若外层会剥掉双引号，立即改临时 `.cmd` 或参数文件。
