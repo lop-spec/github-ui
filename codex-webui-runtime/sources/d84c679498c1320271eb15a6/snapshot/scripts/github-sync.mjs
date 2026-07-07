@@ -294,6 +294,8 @@ export function loadConfig(rootDir = root, env = process.env) {
   config.sourceStatePath = toPosixPath(env.GITHUB_SYNC_STATE_PATH || config.sourceStatePath || DEFAULT_CONFIG.sourceStatePath);
   if (env.GITHUB_SYNC_CREATE_REPO !== undefined) config.createRepo = parseBool(env.GITHUB_SYNC_CREATE_REPO, config.createRepo);
   if (env.GITHUB_SYNC_PRIVATE !== undefined) config.private = parseBool(env.GITHUB_SYNC_PRIVATE, config.private);
+  if (env.GITHUB_SYNC_REACT !== undefined) config.reactSyncEnabled = parseBool(env.GITHUB_SYNC_REACT, config.reactSyncEnabled);
+  else config.reactSyncEnabled = parseBool(config.reactSyncEnabled, false);
 
   config.include = (config.include || []).map(toPosixPath).filter(Boolean);
   config.exclude = (config.exclude || []).map(toPosixPath).filter(Boolean);
@@ -418,6 +420,7 @@ export function portableScopeHash(config = DEFAULT_CONFIG) {
   const payload = {
     version: SYNC_SCOPE_SCHEMA_VERSION,
     runtimeRoot: runtimeRootPath(config),
+    reactSyncEnabled: Boolean(config.reactSyncEnabled),
     include: (config.include || []).map(toPosixPath).sort(),
     exclude: (config.exclude || []).map(toPosixPath).sort(),
     externalRoots,
@@ -510,6 +513,7 @@ export function createSyncFilter(config) {
   const exclude = createPathMatcher(config.exclude || []);
   return (relPath) => {
     const normalized = toPosixPath(relPath);
+    if (!config.reactSyncEnabled && isReactSyncPath(normalized)) return false;
     return Boolean(normalized) && include(normalized) && !exclude(normalized);
   };
 }

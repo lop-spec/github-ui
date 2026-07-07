@@ -378,7 +378,11 @@ const CLIENT_BUILD = '20260707-question-jump-v1';
           conversationBackCount: conversationNavBack.length,
           conversationForwardCount: conversationNavForward.length,
           conversationBackEnabled: Boolean(historyBackBtn && !historyBackBtn.disabled),
-          conversationForwardEnabled: Boolean(historyForwardBtn && !historyForwardBtn.disabled)
+          conversationForwardEnabled: Boolean(historyForwardBtn && !historyForwardBtn.disabled),
+          questionJumpQuestions: questionNavNodes('.bubble.user').length,
+          questionJumpAnswers: questionNavNodes('.bubble.agent').length,
+          questionJumpUpEnabled: Boolean(questionJumpUp && !questionJumpUp.disabled),
+          questionJumpDownEnabled: Boolean(questionJumpDown && !questionJumpDown.disabled)
         });
       }
       async function checkAssetVersion() {
