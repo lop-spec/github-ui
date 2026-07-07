@@ -693,7 +693,7 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
         });
       }
       function linkRawLocalPaths(escapedText) {
-        const localPattern = /(^|[\s(["'“])((?:file:\/\/\/?[^\s<>"`]+|[A-Za-z]:[\\/][^\r\n<>"`]*?|\\\\[^\r\n<>"`]*?|\/(?:workspace|workspaces)[\\/][^\r\n<>"`]*?|\.{1,2}[\\/][^\r\n<>"`]*?|[A-Za-z0-9._-]+(?:[\\/][A-Za-z0-9._-]+){1,}(?::\d+(?::\d+)?)?))(?=$|[\s)\]，。；;！!？?])/g;
+        const localPattern = /(^|[\s(["'“:：])((?:file:\/\/\/?[^\s<>"`]+|[A-Za-z]:[\\/][^\r\n<>"`]*?|\\\\[^\r\n<>"`]*?|\/(?:workspace|workspaces)[\\/][^\r\n<>"`]*?|\.{1,2}[\\/][^\r\n<>"`]*?|[A-Za-z0-9._-]+(?:[\\/][A-Za-z0-9._-]+){1,}(?::\d+(?::\d+)?)?))(?=$|[\s)\]，。；;！!？?])/g;
         return escapedText.replace(localPattern, (match, prefix, target) => {
           const clean = target.replace(/[.,，。；;]+$/, '');
           const suffix = target.slice(clean.length);
