@@ -49,7 +49,7 @@
 - lop 已明确主观审美基线：低噪声、图标优先但不猜谜、扁平现代、柔和分割、丝滑轻动画、可读性压倒风格、性能即审美、极致轻量、极简、不拥挤；关键词为视觉节奏、字体清晰、克制配色、即时反馈、少卡片嵌套、清爽侧栏、加载态轻巧、扫描效率、线条流畅自然、边框柔和圆润。优先用轻量高性能的现代显示/交互控件（选项、触发事件、点击动作、折叠/展开、菜单、分段控制、状态芯片等）替代冗长普通展示，但不得牺牲关键状态可见性、可访问性或操作效率；低分辨率下色彩、背景、字体必须保持最佳可读性。
 - UI、前端、截图、源码等价、Codex WebUI/Plus、对话框引导、排队/队列、消息重编辑、左侧对话栏时间、运行中对话、timeline/fileChange/diff/patch 卡片默认展开折叠状态：按需读 `C:\Users\lop\.codex\rules\webui-plus-parity.md` 和项目 `RULES.md` 13-14。
 - Windows shell、文件链接、产物三件套、APK/安装包：按需读 `C:\Users\lop\.codex\rules\artifact-apk-windows.md` 和项目 `RULES.md` 11-12。
-- Windows 本地操作默认 shellless：命令执行、文件、打开、注册表、服务、进程、端口、文本、JSON、压缩等一律先触发 `$lop-winops`，走 `C:\Users\lop\.codex\tools\winops\winops.exe <job.json>` 与 UTF-8 job/result 文件；`cmd/pwsh/nu/nush` 只允许作为启动 winops 的 bootstrap、winops 未覆盖对象的明确例外、或用户点名复现 shell，本身不再承载复杂业务内容。
+- Windows 本地操作默认 shellless：命令执行、文件、打开、注册表、服务、进程、端口、文本、JSON、压缩等一律先触发 `$lop-winops`，优先走 `winops-mcp`/MCP tool；MCP 未加载时才退回 `C:\Users\lop\.codex\tools\winops\winops.exe <job.json>` 与 UTF-8 job/result 文件；`cmd/pwsh/nu/nush` 只允许作为启动 winops 的 bootstrap、winops 未覆盖对象的明确例外、或用户点名复现 shell，本身不再承载复杂业务内容。
 - 具体平台、地点、商品、服务、网页目标：能联网就先打开具体页面核实；失败说明验证范围。价格问题先区分消费者价/上门价/采购价/运营成本，默认按消费者实际支付回答。
 - 浏览器/网页性能：先区分站点级、Profile 级、全局级；用户指定域名时优先站点级，不默认禁扩展或隔离新 Profile。
 

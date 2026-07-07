@@ -170,7 +170,7 @@
 ## 11. Windows 工具规则
 
 - 本节详细执行细则优先维护在 `C:\Users\lop\.codex\rules\artifact-apk-windows.md`；命中 Windows shell、路径、产物、APK/安装包任务时必须按需读取，不得把全文复制回全局常驻提示。
-- Windows 本地操作默认 shellless：命令执行、文件、打开、注册表、服务、进程、端口、文本、JSON、压缩等一律先触发 `$lop-winops`，走 `C:\Users\lop\.codex\tools\winops\winops.exe <job.json>` 与 UTF-8 job/result 文件。
+- Windows 本地操作默认 shellless：命令执行、文件、打开、注册表、服务、进程、端口、文本、JSON、压缩等一律先触发 `$lop-winops`，优先走 `winops-mcp`/MCP tool；MCP 未加载时才退回 `C:\Users\lop\.codex\tools\winops\winops.exe <job.json>` 与 UTF-8 job/result 文件。
 - `cmd/pwsh/nu/nush` 只作 bootstrap 或明确例外：当前 Codex 执行工具需要宿主进程启动 winops、winops 尚未覆盖的系统对象/API、或用户点名复现 shell；例外必须说明原因，复杂业务内容不得进入 shell。
 - 2026-07-04 的 `cmd`/`nu` 横评只作为 legacy fallback 参考，不再作为默认路线；若 fallback 出现引号、反引号、空格、中文、管道、括号、重定向、内联代码、JSON/HTML/Markdown/正则或长参数，立即迁回 winops job/result。
 - 固定字符串和正则搜索默认走 `$lop-winops` 的 text/json/fs 能力或通过 winops `exec` argv 调外部工具；只有 legacy fallback 才使用 `rg` 命令行。搜索词带空格、`|`、中文、引号、反引号、标点或外层执行器会拆引号时，必须改 pattern 文件或 winops 输入文件，禁止切到 `pwsh` 逃避。

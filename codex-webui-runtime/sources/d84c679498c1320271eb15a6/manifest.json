@@ -13,7 +13,7 @@
     "workspacePath": "C:\\Users\\lop\\Documents\\Codex\\github-ui",
     "scope": "source-rules-skills"
   },
-  "generatedAt": "2026-07-07T08:12:44.850Z",
+  "generatedAt": "2026-07-07T08:15:47.019Z",
   "fullSnapshot": true,
   "mergePolicy": {
     "webui-source": "remote-newer-wins-then-verify",
@@ -560,8 +560,8 @@
     },
     {
       "path": "codex/AGENTS.md",
-      "sha": "87ca3194ab7c61a92cae4ace7131f26fe14856c2",
-      "size": 11048,
+      "sha": "9a4fe684618eb0d454e7303ed7693240b424493d",
+      "size": 11104,
       "category": "rules"
     },
     {
@@ -596,8 +596,8 @@
     },
     {
       "path": "codex/rules/artifact-apk-windows.md",
-      "sha": "192afca6678a7d7e4ef0640e390bab992415a86e",
-      "size": 5525,
+      "sha": "af13969b839969d213950183394c5e42c5695845",
+      "size": 5575,
       "category": "rules"
     },
     {
@@ -740,8 +740,8 @@
     },
     {
       "path": "codex/skills/lop-winops/SKILL.md",
-      "sha": "c18a2428a3e13fdc36f9eca4b9afa99841fe736e",
-      "size": 3110,
+      "sha": "478f57834efb79a7c9ff6661a19e5e124a802a54",
+      "size": 3357,
       "category": "rules"
     },
     {
@@ -752,8 +752,8 @@
     },
     {
       "path": "codex/workspace/Documents-Codex/RULES.md",
-      "sha": "6cb8a2afacd378203d203fa343f9e7673f155438",
-      "size": 31291,
+      "sha": "ee49dccb930d31b1971dc88eb03da5afc7057dce",
+      "size": 31347,
       "category": "rules"
     },
     {
