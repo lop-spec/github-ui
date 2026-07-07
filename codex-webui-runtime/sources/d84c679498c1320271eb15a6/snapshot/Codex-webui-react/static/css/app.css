@@ -3890,10 +3890,48 @@
       .quick-preview-text-scroll,
       .quick-preview-markdown-scroll,
       .quick-preview-image-stage,
+      .quick-preview-directory,
       .quick-preview-website {
         min-height: 0;
         overflow: auto;
         padding: 14px;
+      }
+      .quick-preview-directory {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .quick-preview-entry {
+        min-height: 32px;
+        display: grid;
+        grid-template-columns: 20px minmax(0, 1fr);
+        gap: 8px;
+        align-items: center;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text);
+        padding: 4px 8px;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .quick-preview-entry:hover {
+        background: var(--surface-hover);
+      }
+      .quick-preview-entry-icon {
+        color: var(--text-muted);
+      }
+      .quick-preview-entry-name {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .quick-preview-directory-more {
+        color: var(--text-muted);
+        padding: 8px;
+        font-size: 12px;
       }
       .quick-preview-text {
         margin: 0;
