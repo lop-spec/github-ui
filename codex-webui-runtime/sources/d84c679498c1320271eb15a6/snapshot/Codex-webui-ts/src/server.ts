@@ -851,13 +851,14 @@ function windowsPowerShellCommand(): string {
   return fs.existsSync(powershell) ? powershell : 'powershell.exe';
 }
 
-function shellExecuteWindowsScript(targetPath: string, kind: OpenTarget['kind']): string {
-  const verb = 'open';
-  return [
-    '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8',
-    '$shell = New-Object -ComObject Shell.Application',
-    `$shell.ShellExecute(${JSON.stringify(targetPath)}, '', '', ${JSON.stringify(verb)}, 4)`
-  ].join('; ');
+function windowsExplorerCommand(): string {
+  const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+  const explorer = path.join(systemRoot, 'explorer.exe');
+  return fs.existsSync(explorer) ? explorer : 'explorer.exe';
+}
+
+function windowsOpenArgs(targetPath: string, kind: OpenTarget['kind']): string[] {
+  return kind === 'file' ? ['/select,', targetPath] : [targetPath];
 }
 
 const recentLocalPathOpens = new Map<string, number>();
@@ -905,11 +906,11 @@ function openLocalPath(targetPath: string, kind: OpenTarget['kind'] = 'directory
   const dedupeKey = `${kind}:${process.platform === 'win32' ? targetPath.toLowerCase() : targetPath}`;
   if (now - (recentLocalPathOpens.get(dedupeKey) || 0) < LOCAL_PATH_OPEN_DEDUPE_MS) return Promise.resolve();
   recentLocalPathOpens.set(dedupeKey, now);
-  const command = override || (windowsOpen ? windowsPowerShellCommand() : process.platform === 'darwin' ? 'open' : 'xdg-open');
+  const command = override || (windowsOpen ? windowsExplorerCommand() : process.platform === 'darwin' ? 'open' : 'xdg-open');
   const args = override
     ? [...readJsonArrayEnv('CODEX_WEBUI_OPEN_ARGS_PREFIX_JSON'), targetPath]
     : windowsOpen
-      ? ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-Command', shellExecuteWindowsScript(targetPath, kind)]
+      ? windowsOpenArgs(targetPath, kind)
       : [...readJsonArrayEnv('CODEX_WEBUI_OPEN_ARGS_PREFIX_JSON'), targetPath];
   return new Promise((resolveOpen, reject) => {
     const child = spawn(command, args, {
