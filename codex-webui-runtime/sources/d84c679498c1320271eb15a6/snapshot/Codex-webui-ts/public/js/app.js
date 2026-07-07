@@ -614,6 +614,21 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         const base = parseMessagePathLocation(localPath).path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '';
         return (base.startsWith('.') && base.length > 1) || base.includes('.');
       }
+      function pathSegmentCount(localPath) {
+        return String(localPath || '').replace(/\\/g, '/').split('/').filter(Boolean).length;
+      }
+      function hasLikelyLocalAbsolutePrefix(localPath) {
+        const normalizedPath = String(localPath || '').replace(/\\/g, '/');
+        return normalizedPath.startsWith('/workspace/') || normalizedPath.startsWith('/workspaces/');
+      }
+      function isLikelyDirectoryTarget(localPath) {
+        const location = parseMessagePathLocation(localPath);
+        const pathOnly = String(location.path || '').trim();
+        if (!pathOnly || location.line || /[?#]/.test(pathOnly) || hasLikelyFileName(pathOnly)) return false;
+        if (/^(?:[A-Za-z]:[\\/]|\\\\)/.test(pathOnly)) return true;
+        if (pathOnly.startsWith('/')) return hasLikelyLocalAbsolutePrefix(pathOnly) && pathSegmentCount(pathOnly) >= 2;
+        return /^\.{1,2}[\\/]/.test(pathOnly);
+      }
       function isLikelyRelativeFilePath(value) {
         const target = parseMessagePathLocation(value).path;
         if (!target || /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(target) || !/[\\/]/.test(target)) return false;
@@ -672,7 +687,8 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         const resolved = resolveMessageLocalTarget(target);
         const localPath = resolved?.fullPath || normalizeLocalPathText(target);
         const description = describeMessageLocalPath(localPath, label);
-        return `<button type="button" class="local-path-link message-file-link" data-path="${escapeAttr(localPath)}" title="${escapeAttr(description.fullPath)}"><span class="message-file-link-label"><span class="message-file-link-name">${escapeHtml(description.name)}</span>${description.lineLabel ? `<span class="message-file-link-line"> (line ${escapeHtml(description.lineLabel)})</span>` : ''}</span>${description.parentPath ? `<span class="message-file-link-path">${escapeHtml(description.parentPath)}</span>` : ''}</button>`;
+        const kindHint = isLikelyDirectoryTarget(localPath) ? 'directory' : 'file';
+        return `<button type="button" class="local-path-link message-file-link" data-path="${escapeAttr(localPath)}" data-kind="${escapeAttr(kindHint)}" title="${escapeAttr(description.fullPath)}"><span class="message-file-link-label"><span class="message-file-link-name">${escapeHtml(description.name)}</span>${description.lineLabel ? `<span class="message-file-link-line"> (line ${escapeHtml(description.lineLabel)})</span>` : ''}</span>${description.parentPath ? `<span class="message-file-link-path">${escapeHtml(description.parentPath)}</span>` : ''}</button>`;
       }
       function externalMessageLink(target, label = target) {
         const href = stripLinkWrapper(target);
@@ -1701,12 +1717,16 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         renderPreviewPanel(previewState.data);
         return previewState.data;
       }
-      async function openMessageLocalPath(localPath) {
+      async function openMessageLocalPath(localPath, kindHint = '') {
+        if (kindHint === 'directory') {
+          await openLocalPath(localPath, 'directory');
+          return;
+        }
         try {
           const data = await openPreviewPanel(localPath);
           if (data?.kind === 'directory' && data.path) {
             closeModal('previewModal');
-            await openLocalPath(data.path);
+            await openLocalPath(data.path, 'directory');
           }
         } catch {
           closeModal('previewModal');
@@ -4472,9 +4492,10 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
           addSystem(`打开文件夹失败：${error.message || error}`, true);
         }
       }
-      async function openLocalPath(localPath) {
+      async function openLocalPath(localPath, kind = '') {
         try {
-          const response = await fetch('/path/open', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ path: localPath }) });
+          const payload = (kind === 'directory' || kind === 'file') ? { path: localPath, kind } : { path: localPath };
+          const response = await fetch('/path/open', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
           const data = await response.json().catch(() => ({}));
           if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
           return data;
@@ -5657,7 +5678,7 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         const trigger = event.target && event.target.closest ? event.target.closest('.local-path-link') : null;
         if (!trigger) return;
         event.preventDefault();
-        openMessageLocalPath(trigger.dataset.path || trigger.textContent || '');
+        openMessageLocalPath(trigger.dataset.path || trigger.textContent || '', trigger.dataset.kind || '');
       });
       send.addEventListener('click', () => {
         if (send.dataset.mode === 'stop') stopCurrentTurn();
