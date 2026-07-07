@@ -2,10 +2,10 @@ import * as React from 'react';
 import { legacyShellHtml } from '@/legacy-shell';
 
 const LEGACY_SCRIPT_SOURCES = [
-  '/js/app.js?v=react-parity-20260707-session-title-v1',
-  '/js/transfer.js?v=react-parity-20260707-session-title-v1'
+  '/js/app.js?v=react-parity-20260707-local-dir-open-v5',
+  '/js/transfer.js?v=react-parity-20260707-local-dir-open-v5'
 ];
-const LEGACY_STYLESHEET_HREF = '/css/app.css?v=react-parity-20260707-session-title-v1';
+const LEGACY_STYLESHEET_HREF = '/css/app.css?v=react-parity-20260707-local-dir-open-v5';
 
 declare global {
   interface Window {
