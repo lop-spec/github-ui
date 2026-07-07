@@ -22,6 +22,7 @@ function parseArgs(argv) {
     intervalMs: 5000,
     launchApp: false,
     skipAppServer: false,
+    skipAutoRecover: false,
     json: true
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -34,6 +35,7 @@ function parseArgs(argv) {
     else if (arg.startsWith('--interval=')) options.intervalMs = Number(arg.slice('--interval='.length) || 5000);
     else if (arg === '--launch-app') options.launchApp = true;
     else if (arg === '--skip-app-server') options.skipAppServer = true;
+    else if (arg === '--skip-auto-recover') options.skipAutoRecover = true;
     else if (arg === '--plain') options.json = false;
   }
   options.delayMs = Math.max(0, Number.isFinite(options.delayMs) ? options.delayMs : 0);
@@ -139,6 +141,11 @@ async function webHealth() {
   return { ok: sessions.ok, health, sessions };
 }
 
+async function webHealthLight() {
+  const health = await requestJson(healthUrl(), { timeoutMs: 1200 });
+  return { ok: health.ok, health };
+}
+
 async function appServerHealth(endpoint = readAppServerEndpoint()) {
   const health = await requestJson(endpointHealthUrl(endpoint), { timeoutMs: 1500 });
   return { ok: health.ok, endpoint, health };
@@ -217,7 +224,7 @@ function openLog(name) {
   return fs.openSync(path.join(logDir, name), 'a');
 }
 
-function startWebUi(events) {
+function startWebUi(events, envOverrides = {}) {
   ensureBuild(events);
   const out = openLog('webui-recover-5055.out.log');
   const err = openLog('webui-recover-5055.err.log');
@@ -230,7 +237,8 @@ function startWebUi(events) {
       ...process.env,
       PORT: String(webPort),
       HOST: webHost,
-      CODEX_WEBUI_RECOVERED_START: '1'
+      CODEX_WEBUI_RECOVERED_START: '1',
+      ...envOverrides
     }
   });
   child.unref();
@@ -240,17 +248,17 @@ function startWebUi(events) {
   fs.writeFileSync(path.join(logDir, 'webui-recover-5055.pid'), String(child.pid || ''), 'utf8');
 }
 
-async function waitForWebUi(events, timeoutMs = 18000) {
+async function waitForWebUi(events, timeoutMs = 18000, healthCheck = webHealth) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() <= deadline) {
-    const health = await webHealth();
+    const health = await healthCheck();
     if (health.ok) {
       events.push({ action: 'web-health', ok: true, port: webPort });
       return health;
     }
     await sleep(350);
   }
-  const last = await webHealth();
+  const last = await healthCheck();
   events.push({ action: 'web-health', ok: false, port: webPort, error: last.health?.error || last.sessions?.error || '' });
   throw new Error(`WebUI did not become healthy on ${healthUrl()}`);
 }
@@ -301,22 +309,31 @@ function launchApp(events) {
   events.push({ action: 'launch-app', pid: child.pid });
 }
 
+async function restartWebUi(events, options) {
+  const env = {
+    CODEX_WEBUI_FAST_RESTART: '1',
+    CODEX_WEBUI_AUTO_RECOVER: options.skipAutoRecover ? '0' : process.env.CODEX_WEBUI_AUTO_RECOVER
+  };
+  if (env.CODEX_WEBUI_AUTO_RECOVER == null) delete env.CODEX_WEBUI_AUTO_RECOVER;
+  killPorts([webPort], 'explicit lightweight restart', events);
+  await sleep(150);
+  startWebUi(events, env);
+  await waitForWebUi(events, 6000, webHealthLight);
+}
+
 async function recover(options) {
   const events = [];
   const startedAt = now();
   if (options.delayMs) await sleep(options.delayMs);
   try {
     if (options.mode === 'restart') {
-      const appPort = endpointPort(readAppServerEndpoint()) || endpointPort(defaultAppServerUrl);
-      killPorts([webPort, appPort], 'explicit restart', events);
-      await sleep(600);
-      startWebUi(events);
-      await waitForWebUi(events);
+      await restartWebUi(events, options);
     } else {
       await ensureWebUi(events);
     }
-    if (!options.skipAppServer) await ensureAppServer(events, true);
-    if (options.launchApp) launchApp(events);
+    const fullRecovery = options.mode !== 'restart';
+    if (fullRecovery && !options.skipAppServer) await ensureAppServer(events, true);
+    if (fullRecovery && options.launchApp) launchApp(events);
     const result = { ok: true, mode: options.mode, startedAt, finishedAt: now(), events };
     writeJson(recoveryStateFile, result);
     appendLog(`${options.mode} ok`);

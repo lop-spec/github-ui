@@ -13,7 +13,7 @@
     "workspacePath": "C:\\Users\\lop\\Documents\\Codex\\github-ui",
     "scope": "source-rules-skills"
   },
-  "generatedAt": "2026-07-07T08:53:43.584Z",
+  "generatedAt": "2026-07-07T08:54:12.618Z",
   "fullSnapshot": true,
   "mergePolicy": {
     "webui-source": "remote-newer-wins-then-verify",
@@ -818,8 +818,8 @@
     },
     {
       "path": "scripts/webui-recover.mjs",
-      "sha": "1a4ed90f4a099f7b4f77e8c0feeddba75e26ef43",
-      "size": 14179,
+      "sha": "f76e48824414b9a3633c5778cf7a59141a1e8028",
+      "size": 14827,
       "category": "runtime-script"
     }
   ]
