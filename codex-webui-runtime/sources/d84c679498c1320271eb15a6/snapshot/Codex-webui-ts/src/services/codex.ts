@@ -193,6 +193,7 @@ export class CodexService extends EventEmitter {
   private activeThreadRunning = false;
   private activeStartedAtMs = 0;
   private lastAgentMessageByThread = new Map<string, string>();
+  private resumePathByThreadId = new Map<string, string>();
   private suppressAutoResume = false;
   private suppressExecExitError = false;
 
@@ -239,10 +240,43 @@ export class CodexService extends EventEmitter {
     };
   }
 
+  private nonEmptyString(value: unknown): string | null {
+    const text = typeof value === 'string' ? value.trim() : '';
+    return text ? text : null;
+  }
+
+  private bindThreadResumePath(threadIdValue: unknown, resumePathValue: unknown): string | null {
+    const threadId = this.nonEmptyString(threadIdValue);
+    const resumePath = this.nonEmptyString(resumePathValue);
+    if (!threadId || !this.isExistingResumePath(resumePath)) return null;
+    this.resumePathByThreadId.set(threadId, resumePath);
+    return resumePath;
+  }
+
+  private resumePathForBroadcast(threadId: string | null, payload: Record<string, unknown>): string | null {
+    const explicitResumePath = this.nonEmptyString(payload.resume_path) || this.nonEmptyString(payload.sessionPath) || this.nonEmptyString(payload.path);
+    if (this.isExistingResumePath(explicitResumePath)) return explicitResumePath;
+    if (threadId) {
+      const cached = this.resumePathByThreadId.get(threadId) || null;
+      if (this.isExistingResumePath(cached)) return cached;
+      if (threadId === this.activeThreadId && this.isExistingResumePath(this.lastResumePath)) return this.lastResumePath;
+      return null;
+    }
+    return this.isExistingResumePath(this.lastResumePath) ? this.lastResumePath : null;
+  }
+
+  private appNotificationContext(params: any = {}, item: any = {}): Record<string, unknown> {
+    const threadId = this.nonEmptyString(params.threadId) || this.nonEmptyString(params.thread?.id) || this.nonEmptyString(item.threadId);
+    const turnId = this.nonEmptyString(params.turnId) || this.nonEmptyString(params.turn?.id) || this.nonEmptyString(item.turnId);
+    const itemId = this.nonEmptyString(params.itemId) || this.nonEmptyString(item.itemId) || this.nonEmptyString(item.id);
+    return { threadId: threadId || null, turnId: turnId || null, itemId: itemId || null };
+  }
+
   private activeBroadcastContext(payload: Record<string, unknown> = {}): Record<string, unknown> {
-    const resumePath = this.isExistingResumePath(this.lastResumePath) ? this.lastResumePath : null;
-    const threadId = typeof payload.threadId === 'string' && payload.threadId ? payload.threadId : this.activeThreadId;
-    const turnId = typeof payload.turnId === 'string' && payload.turnId ? payload.turnId : this.activeTurnId;
+    const threadId = this.nonEmptyString(payload.threadId) || this.activeThreadId;
+    const turnId = this.nonEmptyString(payload.turnId) || this.activeTurnId;
+    const resumePath = this.resumePathForBroadcast(threadId, payload);
+    if (threadId && resumePath) this.resumePathByThreadId.set(threadId, resumePath);
     return {
       ...payload,
       resume_path: resumePath,
