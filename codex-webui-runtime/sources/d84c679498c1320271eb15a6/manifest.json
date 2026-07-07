@@ -13,7 +13,7 @@
     "workspacePath": "C:\\Users\\lop\\Documents\\Codex\\github-ui",
     "scope": "source-rules-skills"
   },
-  "generatedAt": "2026-07-07T07:11:13.935Z",
+  "generatedAt": "2026-07-07T07:50:20.312Z",
   "fullSnapshot": true,
   "mergePolicy": {
     "webui-source": "remote-newer-wins-then-verify",
@@ -560,8 +560,8 @@
     },
     {
       "path": "codex/AGENTS.md",
-      "sha": "2a3f47fe77120a5c3c3f5dee9d125e4f5fd98f27",
-      "size": 11128,
+      "sha": "37d9d1d0f537207b3e196921e5bc2d618297e1d8",
+      "size": 11146,
       "category": "rules"
     },
     {
