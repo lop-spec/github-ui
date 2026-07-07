@@ -13,7 +13,7 @@
     "workspacePath": "C:\\Users\\lop\\Documents\\Codex\\github-ui",
     "scope": "source-rules-skills"
   },
-  "generatedAt": "2026-07-07T09:12:09.336Z",
+  "generatedAt": "2026-07-07T09:12:18.800Z",
   "fullSnapshot": true,
   "mergePolicy": {
     "webui-source": "remote-newer-wins-then-verify",
@@ -800,8 +800,8 @@
     },
     {
       "path": "scripts/github-sync.mjs",
-      "sha": "da5022bf18e983991290bbd665368b15c2a98725",
-      "size": 42640,
+      "sha": "70e0556166d752392b2224354cbf4a7b37105eb5",
+      "size": 42632,
       "category": "runtime-script"
     },
     {

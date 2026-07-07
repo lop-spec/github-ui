@@ -380,7 +380,7 @@ function sourceMarkerBuffer(rootDir, config) {
 
 function syncPathCategory(relPath) {
   const normalized = toPosixPath(relPath);
-  if (/^Codex-webui-(ts|react)\//.test(normalized)) return 'webui-source';
+  if (/^Codex-webui-ts\//.test(normalized)) return 'webui-source';
   if (/^(AGENTS\.md|RULES\.md|codex\/(AGENTS\.md|agents\/|prompts\/|rules\/|skills\/|workspace\/))/.test(normalized)) return 'rules';
   if (/^Codex-webui-ts\/(START|INSTALL)_WEBUI_APP\.cmd$/i.test(normalized)) return 'runtime-script';
   if (/(^|\/)scripts\/.*\.(mjs|js|cmd|ps1|sh)$/i.test(normalized)) return 'runtime-script';
