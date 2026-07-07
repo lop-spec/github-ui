@@ -647,6 +647,48 @@
         flex: 0 0 auto;
         flex-wrap: nowrap;
       }
+      .question-jump {
+        flex: 0 0 auto;
+        min-width: 70px;
+        height: 34px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--surface-soft) 54%, transparent);
+        padding: 2px;
+      }
+      .question-jump-btn {
+        width: 30px;
+        height: 28px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: background .12s ease, color .12s ease, transform .12s ease;
+      }
+      .question-jump-btn:not(:disabled):hover,
+      .question-jump-btn:not(:disabled):focus-visible {
+        background: var(--surface-hover);
+        color: var(--text);
+        outline: 0;
+      }
+      .question-jump-btn:not(:disabled):active {
+        transform: translateY(1px);
+      }
+      .question-jump-btn:disabled {
+        cursor: default;
+        opacity: .32;
+      }
+      .question-jump-btn svg {
+        width: 16px;
+        height: 16px;
+      }
       .thread-heading {
         min-width: 0;
         display: flex;
@@ -861,6 +903,11 @@
       }
       .bubble.agent[data-status="streaming"] .bubble-card {
         opacity: .96;
+      }
+      .bubble.question-nav-target .bubble-card {
+        outline: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
+        outline-offset: 2px;
+        transition: outline-color .16s ease;
       }
       .bubble.system .bubble-card {
         width: min(720px, 100%);
@@ -4173,6 +4220,11 @@
       }
       .mono { font-family: var(--mono); }
       svg { display: block; }
+      @media (prefers-reduced-motion: reduce) {
+        .question-jump-btn {
+          transition: none;
+        }
+      }
       @media (max-width: 1180px) {
         .top-right .pill {
           display: none;
@@ -4276,6 +4328,14 @@
         }
         .top-left { flex: 1 1 auto; }
         .top-right { flex: 0 0 auto; gap: 5px; }
+        .question-jump {
+          min-width: 62px;
+          height: 32px;
+        }
+        .question-jump-btn {
+          width: 27px;
+          height: 26px;
+        }
         .top-right .ghost-btn {
           width: 34px;
           padding: 0;

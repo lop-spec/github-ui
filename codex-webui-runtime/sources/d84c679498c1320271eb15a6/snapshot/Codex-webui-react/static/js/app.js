@@ -1,4 +1,4 @@
-const CLIENT_BUILD = '20260706-reply-layout-v1';
+const CLIENT_BUILD = '20260707-question-jump-v1';
       document.documentElement.dataset.webuiBuild = CLIENT_BUILD;
       const DEBUG_NO_EVENTS = new URLSearchParams(location.search).has('debug_no_events');
       const SIDEBAR_VISIBLE_LIMIT = 10;
@@ -24,6 +24,8 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
       const openAccountBtn = $('openAccountBtn');
       const historyBackBtn = $('historyBackBtn');
       const historyForwardBtn = $('historyForwardBtn');
+      const questionJumpUp = $('questionJumpUp');
+      const questionJumpDown = $('questionJumpDown');
       const previewTargetInput = $('previewTargetInput');
       const previewLoadBtn = $('previewLoadBtn');
       const previewOpenExternal = $('previewOpenExternal');
@@ -376,7 +378,11 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
           conversationBackCount: conversationNavBack.length,
           conversationForwardCount: conversationNavForward.length,
           conversationBackEnabled: Boolean(historyBackBtn && !historyBackBtn.disabled),
-          conversationForwardEnabled: Boolean(historyForwardBtn && !historyForwardBtn.disabled)
+          conversationForwardEnabled: Boolean(historyForwardBtn && !historyForwardBtn.disabled),
+          questionJumpQuestions: questionNavNodes('.bubble.user').length,
+          questionJumpAnswers: questionNavNodes('.bubble.agent').length,
+          questionJumpUpEnabled: Boolean(questionJumpUp && !questionJumpUp.disabled),
+          questionJumpDownEnabled: Boolean(questionJumpDown && !questionJumpDown.disabled)
         });
       }
       async function checkAssetVersion() {
@@ -459,6 +465,8 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
       let transcriptSwitchSerial = 0;
       let transcriptHistoryLoader = null;
       let transcriptPageState = { path: '', total: 0, start: 0, end: 0, nextBefore: null, hasMoreOlder: false, loadingOlder: false };
+      let questionJumpUpdateFrame = 0;
+      let questionNavPulseTimer = 0;
       let sidebarRenderTimer = null;
       let sidebarRenderFull = false;
       const appNotificationTimers = new Map();
@@ -512,6 +520,7 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
         { id:'review', description:'对当前改动发起 Review。', flavor:'official', action:'startReview', meta:'Official', requiresThread:true, supportsInlineArgs:true },
         { id:'status', description:'查看当前会话配置与 token 使用情况。', flavor:'official', action:'showStatus', meta:'Local', availableDuringTask:true },
         { id:'debug-config', description:'查看配置层与来源。', flavor:'official', action:'showDebugConfig', meta:'Local', availableDuringTask:true },
+        { id:'diff', description:'显示当前工作区 diff。', flavor:'official', action:'showDiff', meta:'Local', requiresWorkspace:true, availableDuringTask:true },
         { id:'goal', description:'设置或查看长任务目标。', flavor:'official', action:'threadGoal', meta:'Official', requiresThread:true, supportsInlineArgs:true, availableDuringTask:true },
         { id:'compact', description:'压缩当前线程上下文。', flavor:'official', action:'compactThread', meta:'Official', requiresThread:true, availableDuringTask:false },
         { id:'fork', description:'从当前线程创建分支线程。', flavor:'official', action:'forkThread', meta:'Official', requiresThread:true, availableDuringTask:false },
@@ -1071,7 +1080,7 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
         if (button) button.disabled = true;
         try {
           const result = await postJsonEndpoint(endpoint, {});
-          addSystem(`已请求${label}整个 WebUI 服务。后台脚本会检查 5155、5156、自动续跑状态并重新拉起独立 App。`);
+          addSystem(`已请求${label}整个 WebUI 服务。后台脚本会检查 5055、5056、自动续跑状态并重新拉起独立 App。`);
           return result;
         } catch (error) {
           addSystem(`${label} WebUI 服务失败：${error.message || error}`, true);
@@ -1496,9 +1505,7 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
         renderGitPanel();
       }
       async function openGitPanel() {
-        const modal = $('gitModal');
-        if (!modal) return;
-        modal.classList.add('open');
+        openModal('gitModal');
         await loadGitPanel(gitPanelState.scope);
       }
       async function runGitPathAction(endpoint, extra = {}) {
@@ -1590,9 +1597,7 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
         renderTerminalPanel();
       }
       async function openTerminalPanel() {
-        const modal = $('terminalModal');
-        if (!modal) return;
-        modal.classList.add('open');
+        openModal('terminalModal');
         await loadTerminalSessions();
         if (!terminalState.pollTimer) {
           terminalState.pollTimer = setInterval(() => {
@@ -1714,6 +1719,18 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
         if (data?.kind === 'website' && data.url) {
           window.open(data.url, '_blank', 'noopener');
         }
+      }
+      async function showGitDiff() {
+        await openGitPanel();
+        const data = await fetchJsonEndpoint('/git/diff');
+        if (!data.isRepo) {
+          addSystem(`Git：当前工作区不是 Git 仓库。\n${data.workdir || currentWorkdir}\n${data.error || ''}`.trim(), true);
+          return;
+        }
+        const files = (data.files || []).slice(0, 40).map((file) => [file.status, file.path]);
+        const table = files.length ? markdownTable(['状态', '文件'], files) : '当前没有未提交文件。';
+        const diff = data.diff ? `\n\n\`\`\`diff\n${data.diff}\n\`\`\`` : '';
+        addBubble(`Git 状态\n\n分支：${data.branch || '(detached)'}\n仓库：${data.root}\n\n${table}${diff}`, 'agent');
       }
       function setSkillsActionError(message = '') {
         if (!skillsActionError) return;
@@ -2286,6 +2303,10 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
         if (item.action === 'showDebugConfig') {
           await loadConfig();
           addBubble('```json\n' + JSON.stringify(currentConfig, null, 2) + '\n```', 'agent');
+          return;
+        }
+        if (item.action === 'showDiff') {
+          await showGitDiff();
           return;
         }
         if (item.action === 'initAgents') {
@@ -3047,6 +3068,80 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
       function scrollToBottom() {
         const timeline = $('timeline');
         timeline.scrollTop = timeline.scrollHeight;
+        scheduleQuestionJumpUpdate();
+      }
+      function questionNavNodes(selector) {
+        return [...log.querySelectorAll(selector)].filter((node) => {
+          if (!node || node.hidden) return false;
+          const rect = node.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        });
+      }
+      function questionNavOffsetTop(node, timeline = $('timeline')) {
+        const timelineRect = timeline.getBoundingClientRect();
+        const rect = node.getBoundingClientRect();
+        return rect.top - timelineRect.top + timeline.scrollTop;
+      }
+      function questionNavOffsetBottom(node, timeline = $('timeline')) {
+        return questionNavOffsetTop(node, timeline) + node.getBoundingClientRect().height;
+      }
+      function questionNavState() {
+        const timeline = $('timeline');
+        const top = timeline.scrollTop;
+        const bottom = top + timeline.clientHeight;
+        const questions = questionNavNodes('.bubble.user');
+        const answers = questionNavNodes('.bubble.agent');
+        const previousQuestion = [...questions].reverse().find((node) => questionNavOffsetTop(node, timeline) < top - 12) || null;
+        const nextAnswer = answers.find((node) => questionNavOffsetBottom(node, timeline) > bottom + 12) || null;
+        return { previousQuestion, nextAnswer, questions, answers };
+      }
+      function setQuestionJumpButton(button, enabled, activeTitle, emptyTitle) {
+        if (!button) return;
+        button.disabled = !enabled;
+        button.classList.toggle('muted', !enabled);
+        const title = enabled ? activeTitle : emptyTitle;
+        button.title = title;
+        button.setAttribute('aria-label', title);
+      }
+      function updateQuestionJumpControls() {
+        questionJumpUpdateFrame = 0;
+        const state = questionNavState();
+        setQuestionJumpButton(questionJumpUp, Boolean(state.previousQuestion), '定位上一个提问', '没有上一个提问');
+        setQuestionJumpButton(questionJumpDown, Boolean(state.nextAnswer), '定位下一个回复结束', '没有下一个回复结束');
+      }
+      function scheduleQuestionJumpUpdate() {
+        if (questionJumpUpdateFrame) return;
+        questionJumpUpdateFrame = window.requestAnimationFrame(updateQuestionJumpControls);
+      }
+      function flashQuestionNavTarget(target) {
+        if (!target) return;
+        window.clearTimeout(questionNavPulseTimer);
+        log.querySelectorAll('.question-nav-target').forEach((node) => node.classList.remove('question-nav-target'));
+        target.classList.add('question-nav-target');
+        questionNavPulseTimer = window.setTimeout(() => target.classList.remove('question-nav-target'), 700);
+      }
+      function scrollToQuestionNavTarget(target, align = 'start') {
+        if (!target) {
+          updateQuestionJumpControls();
+          return;
+        }
+        const timeline = $('timeline');
+        const margin = 18;
+        const top = questionNavOffsetTop(target, timeline);
+        const bottom = top + target.getBoundingClientRect().height;
+        const maxTop = Math.max(0, timeline.scrollHeight - timeline.clientHeight);
+        const nextTop = align === 'end'
+          ? bottom - timeline.clientHeight + margin
+          : top - margin;
+        const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+        timeline.scrollTo({ top: Math.max(0, Math.min(maxTop, nextTop)), behavior });
+        flashQuestionNavTarget(target);
+        window.setTimeout(scheduleQuestionJumpUpdate, behavior === 'smooth' ? 220 : 0);
+      }
+      function jumpQuestionNavigation(direction) {
+        const state = questionNavState();
+        if (direction === 'up') scrollToQuestionNavTarget(state.previousQuestion, 'start');
+        else scrollToQuestionNavTarget(state.nextAnswer, 'end');
       }
       function transcriptPageEndpoint(path, before = null) {
         const params = new URLSearchParams({ limit: String(TRANSCRIPT_PAGE_LIMIT) });
@@ -3122,6 +3217,7 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
           updateTranscriptPageState(data, path);
           renderTranscriptHistoryLoader();
           timeline.scrollTop = previousTop + (timeline.scrollHeight - previousHeight);
+          scheduleQuestionJumpUpdate();
           updateTokenStats();
           exposeDebugState();
         } catch (error) {
@@ -4481,6 +4577,7 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
       function scheduleAssistantReplyCopyRefresh() {
         window.clearTimeout(assistantReplyCopyRefreshTimer);
         assistantReplyCopyRefreshTimer = window.setTimeout(() => installAssistantReplyCopyButtons(), 80);
+        scheduleQuestionJumpUpdate();
       }
       if (typeof MutationObserver === 'function') {
         const assistantReplyCopyObserver = new MutationObserver(scheduleAssistantReplyCopyRefresh);
@@ -5313,6 +5410,8 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
       historyForwardBtn.addEventListener('click', () => {
         navigateConversationHistory('forward').catch((error) => addSystem(`前进到下一个对话失败：${error.message || error}`, true));
       });
+      questionJumpUp?.addEventListener('click', () => jumpQuestionNavigation('up'));
+      questionJumpDown?.addEventListener('click', () => jumpQuestionNavigation('down'));
       $('themeToggle').addEventListener('click', () => setTheme(document.body.classList.contains('dark') ? 'light' : 'dark'));
       mobileSidebarBtn.addEventListener('click', openMobileSidebar);
       sidebarBackdrop.addEventListener('click', closeMobileSidebar);
@@ -5377,30 +5476,30 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
           });
         }
       });
-      terminalSpawnBtn?.addEventListener('click', () => spawnTerminal().catch((error) => setTerminalStatus(`终端创建失败：${error.message || error}`, true)));
-      terminalRefreshBtn?.addEventListener('click', () => loadTerminalSessions().catch((error) => setTerminalStatus(`终端刷新失败：${error.message || error}`, true)));
-      terminalKillBtn?.addEventListener('click', () => killActiveTerminal().catch((error) => setTerminalStatus(`终端结束失败：${error.message || error}`, true)));
-      terminalSendInputBtn?.addEventListener('click', () => sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true)));
-      terminalStdinInput?.addEventListener('keydown', (event) => {
+      terminalSpawnBtn.addEventListener('click', () => spawnTerminal().catch((error) => setTerminalStatus(`终端创建失败：${error.message || error}`, true)));
+      terminalRefreshBtn.addEventListener('click', () => loadTerminalSessions().catch((error) => setTerminalStatus(`终端刷新失败：${error.message || error}`, true)));
+      terminalKillBtn.addEventListener('click', () => killActiveTerminal().catch((error) => setTerminalStatus(`终端结束失败：${error.message || error}`, true)));
+      terminalSendInputBtn.addEventListener('click', () => sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true)));
+      terminalStdinInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
           sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true));
         }
       });
-      gitRefreshBtn?.addEventListener('click', () => loadGitPanel(gitPanelState.scope).catch((error) => setGitStatusLine(`Git 刷新失败：${error.message || error}`, true)));
-      gitOpenRepoBtn?.addEventListener('click', () => {
+      gitRefreshBtn.addEventListener('click', () => loadGitPanel(gitPanelState.scope).catch((error) => setGitStatusLine(`Git 刷新失败：${error.message || error}`, true)));
+      gitOpenRepoBtn.addEventListener('click', () => {
         const repo = gitPanelState.status?.repoRoot || gitPanelState.status?.root || currentWorkdir;
         if (repo) openLocalPath(repo);
       });
-      gitScopeUnstaged?.addEventListener('click', () => loadGitPanel('unstaged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
-      gitScopeStaged?.addEventListener('click', () => loadGitPanel('staged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
-      gitStageSelected?.addEventListener('click', () => runGitPathAction('/git/stage').catch((error) => setGitStatusLine(`暂存失败：${error.message || error}`, true)));
-      gitUnstageSelected?.addEventListener('click', () => runGitPathAction('/git/unstage').catch((error) => setGitStatusLine(`取消暂存失败：${error.message || error}`, true)));
-      gitDiscardSelected?.addEventListener('click', () => discardSelectedGitChanges().catch((error) => setGitStatusLine(`丢弃失败：${error.message || error}`, true)));
-      gitCommitBtn?.addEventListener('click', () => commitGitChanges().catch((error) => setGitStatusLine(`提交失败：${error.message || error}`, true)));
-      gitPullBtn?.addEventListener('click', () => pullGitChanges().catch((error) => setGitStatusLine(`拉取失败：${error.message || error}`, true)));
-      gitPushBtn?.addEventListener('click', () => pushGitChanges().catch((error) => setGitStatusLine(`推送失败：${error.message || error}`, true)));
-      gitBranchCreate?.addEventListener('click', () => createGitBranch().catch((error) => setGitStatusLine(`创建分支失败：${error.message || error}`, true)));
+      gitScopeUnstaged.addEventListener('click', () => loadGitPanel('unstaged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
+      gitScopeStaged.addEventListener('click', () => loadGitPanel('staged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
+      gitStageSelected.addEventListener('click', () => runGitPathAction('/git/stage').catch((error) => setGitStatusLine(`暂存失败：${error.message || error}`, true)));
+      gitUnstageSelected.addEventListener('click', () => runGitPathAction('/git/unstage').catch((error) => setGitStatusLine(`取消暂存失败：${error.message || error}`, true)));
+      gitDiscardSelected.addEventListener('click', () => discardSelectedGitChanges().catch((error) => setGitStatusLine(`丢弃失败：${error.message || error}`, true)));
+      gitCommitBtn.addEventListener('click', () => commitGitChanges().catch((error) => setGitStatusLine(`提交失败：${error.message || error}`, true)));
+      gitPullBtn.addEventListener('click', () => pullGitChanges().catch((error) => setGitStatusLine(`拉取失败：${error.message || error}`, true)));
+      gitPushBtn.addEventListener('click', () => pushGitChanges().catch((error) => setGitStatusLine(`推送失败：${error.message || error}`, true)));
+      gitBranchCreate.addEventListener('click', () => createGitBranch().catch((error) => setGitStatusLine(`创建分支失败：${error.message || error}`, true)));
       projectOpenConfirm.addEventListener('click', () => openProjectFolder(projectPathInput.value));
       projectPickFolder.addEventListener('click', pickProjectFolder);
       projectBrowseUp.addEventListener('click', () => {
@@ -5515,6 +5614,7 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
       $('timeline').addEventListener('scroll', () => {
         const timeline = $('timeline');
         if (timeline.scrollTop <= 80) loadOlderTranscriptPage().catch((error) => addSystem(`加载更早历史失败：${error.message || error}`, true));
+        scheduleQuestionJumpUpdate();
       });
       log.addEventListener('click', (event) => {
         const trigger = event.target && event.target.closest ? event.target.closest('.local-path-link') : null;
@@ -5581,6 +5681,7 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
         ensureSidebarVisible();
         updatePlanModeControls();
         updateConversationNavControls();
+        updateQuestionJumpControls();
         exposeDebugState();
         await checkAssetVersion();
         if (DEBUG_NO_EVENTS) {
