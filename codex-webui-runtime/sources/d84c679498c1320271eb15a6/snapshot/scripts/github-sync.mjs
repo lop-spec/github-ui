@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-export const SYNC_SCOPE_SCHEMA_VERSION = 2;
+export const SYNC_SCOPE_SCHEMA_VERSION = 3;
 
 export const DEFAULT_CONFIG = {
   owner: '',
@@ -23,6 +23,7 @@ export const DEFAULT_CONFIG = {
   debounceMs: 1500,
   maxFileBytes: 2 * 1024 * 1024,
   maxChangesPerCommit: 800,
+  reactSyncEnabled: false,
   include: [
     '.gitignore',
     'AGENTS.md',
@@ -470,6 +471,10 @@ function parseBool(value, fallback) {
   if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
   if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
   return Boolean(fallback);
+}
+
+function isReactSyncPath(relPath) {
+  return toPosixPath(relPath).startsWith('Codex-webui-react/');
 }
 
 export function globToRegExp(pattern) {
