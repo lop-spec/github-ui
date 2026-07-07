@@ -3,13 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="codex-webui-build" content="20260707-question-jump-v1" />
+    <meta name="codex-webui-build" content="20260707-question-jump-composer-v2" />
     <meta name="application-name" content="Codex WebUI" />
     <meta name="theme-color" content="#020202" />
     <title>Codex Plus Web</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icons/codex-webui.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/css/app.css?v=20260707-question-jump-v1" />
+    <link rel="stylesheet" href="/css/app.css?v=20260707-question-jump-composer-v2" />
   </head>
   <body>
     <section class="app-notification-viewport" id="appNotificationViewport" aria-label="应用通知" role="region"></section>
@@ -85,14 +85,6 @@
               <span id="threadMeta">等待连接</span>
             </div>
           </div>
-          <div class="question-jump" role="group" aria-label="对话定位">
-            <button type="button" class="question-jump-btn" id="questionJumpUp" title="定位上一个提问" aria-label="定位上一个提问" disabled>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-            <button type="button" class="question-jump-btn" id="questionJumpDown" title="定位下一个回复结束" aria-label="定位下一个回复结束" disabled>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M19 12l-7 7-7-7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-          </div>
           <div class="top-right">
             <span class="pill" id="resumePill">未恢复</span>
             <button class="ghost-btn" id="restartBtn" title="重启整个 WebUI 服务">
@@ -128,6 +120,14 @@
                   <span class="composer-context-label" id="composerContextLabel">未选择项目</span>
                 </div>
                 <span class="composer-followup-hint" id="composerFollowupHint" hidden></span>
+                <div class="question-jump" role="group" aria-label="对话定位">
+                  <button type="button" class="question-jump-btn" id="questionJumpUp" title="定位上一个提问" aria-label="定位上一个提问" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                  <button type="button" class="question-jump-btn" id="questionJumpDown" title="定位下一个回复结论或结尾" aria-label="定位下一个回复结论或结尾" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M19 12l-7 7-7-7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                </div>
                 <span class="composer-run-state" id="composerRunState" data-state="idle">就绪</span>
               </div>
               <textarea id="text" placeholder="给 Codex 发送消息"></textarea>
@@ -614,7 +614,7 @@
         </div>
       </div>
     </div>
-    <script src="/js/app.js?v=20260707-question-jump-v1" defer></script>
-    <script src="/js/transfer.js?v=20260707-question-jump-v1" defer></script>
+    <script src="/js/app.js?v=20260707-question-jump-composer-v2" defer></script>
+    <script src="/js/transfer.js?v=20260707-question-jump-composer-v2" defer></script>
   </body>
 </html>
