@@ -13,7 +13,7 @@
     "workspacePath": "C:\\Users\\lop\\Documents\\Codex\\github-ui",
     "scope": "source-rules-skills"
   },
-  "generatedAt": "2026-07-07T09:13:03.854Z",
+  "generatedAt": "2026-07-07T09:13:12.999Z",
   "fullSnapshot": true,
   "mergePolicy": {
     "webui-source": "remote-newer-wins-then-verify",
@@ -22,7 +22,7 @@
     "local-machine": "do-not-cross-machine-apply-use-examples",
     "artifacts": "never-upload-never-apply"
   },
-  "fileCount": 133,
+  "fileCount": 132,
   "files": [
     {
       "path": ".gitignore",
@@ -808,12 +808,6 @@
       "path": "scripts/parity-check.mjs",
       "sha": "101383003a4ec7c3cf8b25f2e36eb8d342c70305",
       "size": 14905,
-      "category": "runtime-script"
-    },
-    {
-      "path": "scripts/parity-watch.mjs",
-      "sha": "d44c6ba7701bc95ef791e9106307335946538c82",
-      "size": 2724,
       "category": "runtime-script"
     },
     {
