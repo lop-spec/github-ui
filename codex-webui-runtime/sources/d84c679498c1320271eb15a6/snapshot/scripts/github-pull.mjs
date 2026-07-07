@@ -14,6 +14,7 @@ import {
   localSourceInfo,
   loadConfig,
   portableScopeHash,
+  REACT_SYNC_CLOSED_MESSAGE,
   runtimeRootPath,
   toPosixPath
 } from './github-sync.mjs';
@@ -30,7 +31,6 @@ export const DEFAULT_PULL_CONFIG = {
   statePath: 'logs/github-pull-state.json',
   protectedPaths: [
     'Codex-webui-ts/history.json',
-    'Codex-webui-react/history.json',
     'codex/rules/default.rules',
     'codex/skills/.system/**',
     '.codex/**',
@@ -586,14 +586,14 @@ export async function pullOnce({ rootDir = root, syncConfig, pullConfig, dryRun 
 }
 
 function parseArgs(argv = process.argv.slice(2)) {
-  const out = { status: false, once: false, watch: false, dryRun: false, json: false, withReact: false };
+  const out = { status: false, once: false, watch: false, dryRun: false, json: false };
   for (const arg of argv) {
     if (arg === '--status') out.status = true;
     else if (arg === '--once') out.once = true;
     else if (arg === '--watch') out.watch = true;
     else if (arg === '--dry-run') out.dryRun = true;
     else if (arg === '--json') out.json = true;
-    else if (arg === '--with-react') out.withReact = true;
+    else if (arg === '--with-react') throw new Error(REACT_SYNC_CLOSED_MESSAGE);
     else if (arg === '--help' || arg === '-h') out.help = true;
     else throw new Error(`unknown argument: ${arg}`);
   }
@@ -609,11 +609,7 @@ function printHelp() {
     '  node scripts/github-pull.mjs --status',
     '  node scripts/github-pull.mjs --once --dry-run',
     '  node scripts/github-pull.mjs --once',
-    '  node scripts/github-pull.mjs --watch',
-    '  node scripts/github-pull.mjs --once --with-react',
-    '',
-    'Options:',
-    '  --with-react    Manually apply Codex-webui-react/** from GitHub.'
+    '  node scripts/github-pull.mjs --watch'
   ].join('\n'));
 }
 
@@ -682,7 +678,6 @@ async function main() {
     return;
   }
   const { syncConfig, pull } = loadPullConfig(root);
-  if (args.withReact) syncConfig.reactSyncEnabled = true;
   if (args.status) {
     const result = await runStatus(root, syncConfig, pull);
     if (args.json) console.log(JSON.stringify(result, null, 2));
