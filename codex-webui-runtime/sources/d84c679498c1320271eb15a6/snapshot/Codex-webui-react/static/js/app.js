@@ -1640,6 +1640,21 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
             </div>`;
           return;
         }
+        if (data.kind === 'directory') {
+          const entries = (data.entries || []).map((entry) => `
+            <button type="button" class="quick-preview-entry" data-path="${escapeAttr(entry.path)}" data-kind="${escapeAttr(entry.kind || '')}">
+              <span class="quick-preview-entry-icon">${entry.kind === 'directory' ? '▣' : '□'}</span>
+              <span class="quick-preview-entry-name">${escapeHtml(entry.name || entry.path || '')}</span>
+            </button>
+          `).join('');
+          previewPanel.innerHTML = `
+            <div class="quick-preview-toolbar"><div class="quick-preview-breadcrumb" title="${escapeAttr(data.path)}">${escapeHtml(data.path || data.name || '文件夹')}</div><span>${Number(data.totalEntries || 0)} 项</span></div>
+            <div class="quick-preview-directory">
+              ${entries || '<div class="quick-preview-status">空文件夹</div>'}
+              ${data.truncated ? '<div class="quick-preview-directory-more">已截断显示</div>' : ''}
+            </div>`;
+          return;
+        }
         const title = `${data.name || data.path} ${data.extension ? `· ${String(data.extension).toUpperCase()}` : ''}`;
         if (data.fileKind === 'image' && data.dataUrl) {
           previewPanel.innerHTML = `
@@ -1678,6 +1693,13 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
         if (target && previewTargetInput) previewTargetInput.value = target;
         if (target) await loadQuickPreview(target);
         else renderPreviewPanel(previewState.data);
+      }
+      async function openMessageLocalPath(localPath) {
+        try {
+          await openPreviewPanel(localPath);
+        } catch (error) {
+          addSystem(`预览本地路径失败：${error.message || error}`, true);
+        }
       }
       async function openPreviewExternal() {
         const data = previewState.data;
@@ -5469,7 +5491,7 @@ const CLIENT_BUILD = '20260706-reply-layout-v1';
         const trigger = event.target && event.target.closest ? event.target.closest('.local-path-link') : null;
         if (!trigger) return;
         event.preventDefault();
-        openLocalPath(trigger.dataset.path || trigger.textContent || '');
+        openMessageLocalPath(trigger.dataset.path || trigger.textContent || '');
       });
       send.addEventListener('click', () => {
         if (send.dataset.mode === 'stop') stopCurrentTurn();
