@@ -28,7 +28,7 @@ import { deleteMcpServer, listMcpServers, saveMcpServer, toggleMcpServer, writeS
 import { getQuickPreview } from './services/preview.js';
 import { deleteSkill, listSkills, setSkillEnabled } from './services/skills.js';
 import { killTerminalSession, listTerminalSessions, resizeTerminalSession, spawnTerminalSession, writeTerminalStdin } from './services/terminal.js';
-import { scanSessions, parseSessionMessages, parseSessionMessagesPage, isWithinSessions, readHistory, writeHistory } from './utils/fs-helpers.js';
+import { clearSessionSummaryCache, scanSessions, parseSessionMessages, parseSessionMessagesPage, isWithinSessions, readHistory, writeHistory } from './utils/fs-helpers.js';
 import type { History, HistoryEntry, ProjectRoot, SessionEntry } from './types.js';
 import {
   cleanupExpiredTransfers,
@@ -55,7 +55,7 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const PORT = process.env.PORT ? Number(process.env.PORT) : 5155;
+const PORT = process.env.PORT ? Number(process.env.PORT) : 5055;
 const HOST = process.env.HOST || '0.0.0.0';
 const TOKEN = process.env.WEBUI_TOKEN || '';
 const PUBLIC_AUTH_USER = process.env.CODEX_WEBUI_PUBLIC_USER || 'lop';
@@ -65,9 +65,9 @@ const AUTO_RECOVER_INTERRUPTED_TURNS = (() => {
   const raw = String(process.env.CODEX_WEBUI_AUTO_RECOVER || '').trim().toLowerCase();
   if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
   if (['0', 'false', 'no', 'off'].includes(raw)) return false;
-  return PORT === 5155;
+  return PORT === 5055;
 })();
-const UI_BUILD = '20260707-local-dir-open-v4';
+const UI_BUILD = '20260707-local-dir-open-v5';
 const STATIC_ASSETS = ['index.html', 'css/app.css', 'js/app.js', 'js/transfer.js'];
 const UPLOAD_DIR = process.env.CODEX_WEBUI_UPLOADS ? path.resolve(process.env.CODEX_WEBUI_UPLOADS) : path.resolve(process.cwd(), 'uploads');
 const SESSIONS_ROOT = path.join(os.homedir(), '.codex', 'sessions');
@@ -315,6 +315,19 @@ function normalizeOpenPath(value: unknown): string {
   let requested = String(value || '').trim();
   if ((requested.startsWith('<') && requested.endsWith('>')) || (requested.startsWith('"') && requested.endsWith('"'))) {
     requested = requested.slice(1, -1).trim();
+  }
+  if (/^file:\/\//i.test(requested)) {
+    try {
+      requested = fileURLToPath(requested);
+    } catch {
+      try {
+        const fileUrl = new URL(requested);
+        let decodedPath = decodeURIComponent(fileUrl.pathname);
+        if (fileUrl.host && fileUrl.host !== 'localhost') decodedPath = `//${fileUrl.host}${decodedPath.startsWith('/') ? decodedPath : `/${decodedPath}`}`;
+        if (process.platform === 'win32') decodedPath = decodedPath.replace(/^\/([A-Za-z]:)/, '$1');
+        requested = decodedPath;
+      } catch {}
+    }
   }
   try { requested = decodeURI(requested); } catch {}
   return requested;
@@ -2174,6 +2187,38 @@ const server = http.createServer((req, res) => {
     setCORS(res);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ sessions: list, current: lastPath, workdir: codexService.getWorkdir(), currentRoot }));
+  }
+
+  if (req.method === 'POST' && url === '/sessions/retitle') {
+    if (!requireAuth(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+    const h = readHistory();
+    const archived = archivedSessionPathSet(h);
+    const pinned = pinnedSessionPathSet(h);
+    const roots = validHistoryRoots(h);
+    const currentRoot = projectRootForWorkdir(codexService.getWorkdir(), roots);
+    clearSessionSummaryCache();
+    const list = scanSessions()
+      .filter((session) => !archived.has(pathIdentity(session.path)))
+      .map((session) => {
+        const effectiveCwd = effectiveSessionWorkdir(h, session);
+        const moved = effectiveCwd && session.cwd && pathIdentity(effectiveCwd) !== pathIdentity(session.cwd);
+        return {
+          ...session,
+          cwd: effectiveCwd || session.cwd,
+          originalCwd: moved ? session.cwd : undefined,
+          projectRoot: projectRootForWorkdir(effectiveCwd || session.cwd, roots),
+          pinned: pinned.has(pathIdentity(session.path))
+        };
+      });
+    return sendJson(res, 200, {
+      ok: true,
+      total: list.length,
+      titled: list.filter((session) => Boolean(session.title)).length,
+      sessions: list,
+      current: codexService.getDisplayResumePath(),
+      workdir: codexService.getWorkdir(),
+      currentRoot
+    });
   }
 
   if (req.method === 'GET' && url === '/session-messages') {

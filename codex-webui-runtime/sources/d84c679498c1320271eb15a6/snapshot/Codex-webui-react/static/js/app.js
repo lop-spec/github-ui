@@ -1,4 +1,4 @@
-const CLIENT_BUILD = '20260707-local-dir-open-v4';
+const CLIENT_BUILD = '20260707-local-dir-open-v5';
       document.documentElement.dataset.webuiBuild = CLIENT_BUILD;
       const DEBUG_NO_EVENTS = new URLSearchParams(location.search).has('debug_no_events');
       const SIDEBAR_VISIBLE_LIMIT = 10;
@@ -114,6 +114,9 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
       const sideFilter = $('sideFilter');
       const queuePanel = $('queuePanel');
       const userInputPrompt = $('userInputPrompt');
+      const settingsNavItems = [...document.querySelectorAll('.settings-nav-item')];
+      const settingsSections = [...document.querySelectorAll('.settings-section')];
+      const organizeSessionTitlesBtn = $('organizeSessionTitles');
       function safeLocalGet(key, fallback = '') {
         try {
           const value = localStorage.getItem(key);
@@ -359,6 +362,8 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
           composerRunState: composerRunState ? composerRunState.textContent : '',
           composerRunStateMode: composerRunState ? composerRunState.dataset.state : '',
           settingsSections: document.querySelectorAll('.settings-section').length,
+          settingsNavItems: document.querySelectorAll('.settings-nav-item').length,
+          activeSettingsSection: document.querySelector('.settings-nav-item-active')?.dataset.settingsTarget || '',
           settingsOptions: document.querySelectorAll('.settings-field input, .settings-field select, .settings-field textarea').length,
           appNotifications: appNotifications.length,
           terminalSessions: terminalState.sessions.length,
@@ -520,6 +525,7 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         { id:'review', description:'对当前改动发起 Review。', flavor:'official', action:'startReview', meta:'Official', requiresThread:true, supportsInlineArgs:true },
         { id:'status', description:'查看当前会话配置与 token 使用情况。', flavor:'official', action:'showStatus', meta:'Local', availableDuringTask:true },
         { id:'debug-config', description:'查看配置层与来源。', flavor:'official', action:'showDebugConfig', meta:'Local', availableDuringTask:true },
+        { id:'diff', description:'显示当前工作区 diff。', flavor:'official', action:'showDiff', meta:'Local', requiresWorkspace:true, availableDuringTask:true },
         { id:'goal', description:'设置或查看长任务目标。', flavor:'official', action:'threadGoal', meta:'Official', requiresThread:true, supportsInlineArgs:true, availableDuringTask:true },
         { id:'compact', description:'压缩当前线程上下文。', flavor:'official', action:'compactThread', meta:'Official', requiresThread:true, availableDuringTask:false },
         { id:'fork', description:'从当前线程创建分支线程。', flavor:'official', action:'forkThread', meta:'Official', requiresThread:true, availableDuringTask:false },
@@ -613,6 +619,21 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         const base = parseMessagePathLocation(localPath).path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '';
         return (base.startsWith('.') && base.length > 1) || base.includes('.');
       }
+      function pathSegmentCount(localPath) {
+        return String(localPath || '').replace(/\\/g, '/').split('/').filter(Boolean).length;
+      }
+      function hasLikelyLocalAbsolutePrefix(localPath) {
+        const normalizedPath = String(localPath || '').replace(/\\/g, '/');
+        return normalizedPath.startsWith('/workspace/') || normalizedPath.startsWith('/workspaces/');
+      }
+      function isLikelyDirectoryTarget(localPath) {
+        const location = parseMessagePathLocation(localPath);
+        const pathOnly = String(location.path || '').trim();
+        if (!pathOnly || location.line || /[?#]/.test(pathOnly) || hasLikelyFileName(pathOnly)) return false;
+        if (/^(?:[A-Za-z]:[\\/]|\\\\)/.test(pathOnly)) return true;
+        if (pathOnly.startsWith('/')) return hasLikelyLocalAbsolutePrefix(pathOnly) && pathSegmentCount(pathOnly) >= 2;
+        return /^\.{1,2}[\\/]/.test(pathOnly);
+      }
       function isLikelyRelativeFilePath(value) {
         const target = parseMessagePathLocation(value).path;
         if (!target || /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(target) || !/[\\/]/.test(target)) return false;
@@ -671,7 +692,8 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         const resolved = resolveMessageLocalTarget(target);
         const localPath = resolved?.fullPath || normalizeLocalPathText(target);
         const description = describeMessageLocalPath(localPath, label);
-        return `<button type="button" class="local-path-link message-file-link" data-path="${escapeAttr(localPath)}" title="${escapeAttr(description.fullPath)}"><span class="message-file-link-label"><span class="message-file-link-name">${escapeHtml(description.name)}</span>${description.lineLabel ? `<span class="message-file-link-line"> (line ${escapeHtml(description.lineLabel)})</span>` : ''}</span>${description.parentPath ? `<span class="message-file-link-path">${escapeHtml(description.parentPath)}</span>` : ''}</button>`;
+        const kindHint = isLikelyDirectoryTarget(localPath) ? 'directory' : 'file';
+        return `<button type="button" class="local-path-link message-file-link" data-path="${escapeAttr(localPath)}" data-kind="${escapeAttr(kindHint)}" title="${escapeAttr(description.fullPath)}"><span class="message-file-link-label"><span class="message-file-link-name">${escapeHtml(description.name)}</span>${description.lineLabel ? `<span class="message-file-link-line"> (line ${escapeHtml(description.lineLabel)})</span>` : ''}</span>${description.parentPath ? `<span class="message-file-link-path">${escapeHtml(description.parentPath)}</span>` : ''}</button>`;
       }
       function externalMessageLink(target, label = target) {
         const href = stripLinkWrapper(target);
@@ -1504,7 +1526,8 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         renderGitPanel();
       }
       async function openGitPanel() {
-        addSystem('Git 面板在 React 承载版已按当前范围隐藏。', true);
+        openModal('gitModal');
+        await loadGitPanel(gitPanelState.scope);
       }
       async function runGitPathAction(endpoint, extra = {}) {
         const paths = gitSelectionPaths();
@@ -1595,7 +1618,14 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         renderTerminalPanel();
       }
       async function openTerminalPanel() {
-        addSystem('终端面板在 React 承载版已按当前范围隐藏。', true);
+        openModal('terminalModal');
+        await loadTerminalSessions();
+        if (!terminalState.pollTimer) {
+          terminalState.pollTimer = setInterval(() => {
+            if (!$('terminalModal')?.classList.contains('open')) return;
+            loadTerminalSessions().catch(() => {});
+          }, 1500);
+        }
       }
       async function spawnTerminal() {
         const command = String(terminalCommandInput?.value || '').trim();
@@ -1692,12 +1722,16 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         renderPreviewPanel(previewState.data);
         return previewState.data;
       }
-      async function openMessageLocalPath(localPath) {
+      async function openMessageLocalPath(localPath, kindHint = '') {
+        if (kindHint === 'directory') {
+          await openLocalPath(localPath, 'directory');
+          return;
+        }
         try {
           const data = await openPreviewPanel(localPath);
           if (data?.kind === 'directory' && data.path) {
             closeModal('previewModal');
-            await openLocalPath(data.path);
+            await openLocalPath(data.path, 'directory');
           }
         } catch {
           closeModal('previewModal');
@@ -1717,6 +1751,18 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         if (data?.kind === 'website' && data.url) {
           window.open(data.url, '_blank', 'noopener');
         }
+      }
+      async function showGitDiff() {
+        await openGitPanel();
+        const data = await fetchJsonEndpoint('/git/diff');
+        if (!data.isRepo) {
+          addSystem(`Git：当前工作区不是 Git 仓库。\n${data.workdir || currentWorkdir}\n${data.error || ''}`.trim(), true);
+          return;
+        }
+        const files = (data.files || []).slice(0, 40).map((file) => [file.status, file.path]);
+        const table = files.length ? markdownTable(['状态', '文件'], files) : '当前没有未提交文件。';
+        const diff = data.diff ? `\n\n\`\`\`diff\n${data.diff}\n\`\`\`` : '';
+        addBubble(`Git 状态\n\n分支：${data.branch || '(detached)'}\n仓库：${data.root}\n\n${table}${diff}`, 'agent');
       }
       function setSkillsActionError(message = '') {
         if (!skillsActionError) return;
@@ -2263,8 +2309,7 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
           return;
         }
         if (item.action === 'openModel' || item.action === 'openSettings') {
-          await loadConfig();
-          openModal('settingsModal');
+          await openSettingsPage('model');
           setTimeout(() => $('cfgModel').focus(), 0);
           return;
         }
@@ -2289,6 +2334,10 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         if (item.action === 'showDebugConfig') {
           await loadConfig();
           addBubble('```json\n' + JSON.stringify(currentConfig, null, 2) + '\n```', 'agent');
+          return;
+        }
+        if (item.action === 'showDiff') {
+          await showGitDiff();
           return;
         }
         if (item.action === 'initAgents') {
@@ -3456,6 +3505,48 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         row.textContent = message;
         row.classList.toggle('settings-status-error', Boolean(error));
       }
+      function setSettingsSection(section = 'model') {
+        const target = settingsSections.some((item) => item.dataset.settingsSection === section) ? section : 'model';
+        settingsNavItems.forEach((item) => {
+          const active = item.dataset.settingsTarget === target;
+          item.classList.toggle('settings-nav-item-active', active);
+          item.setAttribute('aria-current', active ? 'page' : 'false');
+        });
+        settingsSections.forEach((item) => {
+          item.hidden = item.dataset.settingsSection !== target;
+        });
+        exposeDebugState();
+      }
+      async function openSettingsPage(section = 'model') {
+        await loadConfig();
+        setSettingsSection(section);
+        openModal('settingsModal');
+      }
+      async function organizeSessionTitles() {
+        if (!organizeSessionTitlesBtn) return;
+        const originalText = organizeSessionTitlesBtn.textContent || '整理标题';
+        organizeSessionTitlesBtn.disabled = true;
+        organizeSessionTitlesBtn.textContent = '整理中...';
+        setSettingsStatus('正在重新扫描历史会话标题...');
+        try {
+          const response = await fetch('/sessions/retitle', { method:'POST', cache: 'no-store' });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || data.ok === false || !Array.isArray(data.sessions)) throw new Error(data.error || `HTTP ${response.status}`);
+          sessionsCache = (data.sessions || []).filter((session) => !optimisticDeletedSessionPaths.has(normalizeSessionPath(session.path)));
+          currentWorkdir = data.workdir || currentWorkdir;
+          currentProjectRootPath = data.currentRoot || currentProjectRootPath || currentWorkdir;
+          updateComposerContext();
+          renderSessions();
+          renderProjects();
+          await loadProjects();
+          setSettingsStatus(`已整理 ${data.titled || sessionsCache.length} / ${data.total || sessionsCache.length} 个会话标题`);
+        } catch (error) {
+          setSettingsStatus(`整理失败：${error.message || error}`, true);
+        } finally {
+          organizeSessionTitlesBtn.disabled = false;
+          organizeSessionTitlesBtn.textContent = originalText;
+        }
+      }
       async function saveConfig() {
         const payload = {
           model: $('cfgModel').value || 'gpt-5.5',
@@ -3630,12 +3721,13 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         btn.className = `thread-item ${sameSessionPath(currentResumePath, s.path) ? 'active' : ''} ${running ? 'thread-item-running' : ''}`;
         btn.dataset.sessionKey = sessionDomKey(s.path);
         btn.setAttribute('aria-current', sameSessionPath(currentResumePath, s.path) ? 'true' : 'false');
-        btn.title = running ? '运行中，点击恢复会话；右键打开菜单' : '右键打开菜单';
+        const titleText = sessionTitle(s);
+        btn.title = `${titleText}\n${running ? '运行中，点击恢复会话；右键打开菜单' : '点击恢复会话；右键打开菜单'}`;
         const count = s.messageCount ? `${s.messageCount} 条` : toKB(s.size);
         const status = running
           ? '<span class="session-running"><span class="session-running-dot"></span>运行中</span>'
           : `<span class="pill">${escapeHtml(count)}</span>`;
-        btn.innerHTML = `<span class="item-main"><span class="item-title">${escapeHtml(sessionTitle(s))}</span><span class="item-sub">${sessionSubMarkup(s)}</span></span>${status}`;
+        btn.innerHTML = `<span class="item-main"><span class="item-title">${escapeHtml(titleText)}</span><span class="item-sub">${sessionSubMarkup(s)}</span></span>${status}`;
         btn.addEventListener('click', async () => {
           await switchToSession(s);
         });
@@ -4248,13 +4340,14 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'workspace-thread-button';
-        button.title = '点击恢复会话；右键打开菜单';
+        const titleText = sessionTitle(thread);
+        button.title = `${titleText}\n点击恢复会话；右键打开菜单`;
         const running = isRunningSession(thread);
         const threadMs = sessionTimeMs(thread);
         const status = running
           ? '<span class="workspace-thread-badge workspace-thread-badge-running">运行中</span>'
           : `<span class="workspace-thread-meta relative-time" data-relative-ms="${threadMs}">${escapeHtml(relativeTime(threadMs))}</span>`;
-        button.innerHTML = `<span class="workspace-thread-title-row"><span class="workspace-thread-title">${escapeHtml(sessionTitle(thread))}</span>${status}</span>`;
+        button.innerHTML = `<span class="workspace-thread-title-row"><span class="workspace-thread-title">${escapeHtml(titleText)}</span>${status}</span>`;
         button.addEventListener('click', async () => {
           await switchToSession({ ...thread, cwd: thread.cwd || rootWorkdir });
         });
@@ -4447,9 +4540,10 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
           addSystem(`打开文件夹失败：${error.message || error}`, true);
         }
       }
-      async function openLocalPath(localPath) {
+      async function openLocalPath(localPath, kind = '') {
         try {
-          const response = await fetch('/path/open', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ path: localPath }) });
+          const payload = (kind === 'directory' || kind === 'file') ? { path: localPath, kind } : { path: localPath };
+          const response = await fetch('/path/open', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
           const data = await response.json().catch(() => ({}));
           if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
           return data;
@@ -5488,30 +5582,30 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
           });
         }
       });
-      terminalSpawnBtn?.addEventListener('click', () => spawnTerminal().catch((error) => setTerminalStatus(`终端创建失败：${error.message || error}`, true)));
-      terminalRefreshBtn?.addEventListener('click', () => loadTerminalSessions().catch((error) => setTerminalStatus(`终端刷新失败：${error.message || error}`, true)));
-      terminalKillBtn?.addEventListener('click', () => killActiveTerminal().catch((error) => setTerminalStatus(`终端结束失败：${error.message || error}`, true)));
-      terminalSendInputBtn?.addEventListener('click', () => sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true)));
-      terminalStdinInput?.addEventListener('keydown', (event) => {
+      terminalSpawnBtn.addEventListener('click', () => spawnTerminal().catch((error) => setTerminalStatus(`终端创建失败：${error.message || error}`, true)));
+      terminalRefreshBtn.addEventListener('click', () => loadTerminalSessions().catch((error) => setTerminalStatus(`终端刷新失败：${error.message || error}`, true)));
+      terminalKillBtn.addEventListener('click', () => killActiveTerminal().catch((error) => setTerminalStatus(`终端结束失败：${error.message || error}`, true)));
+      terminalSendInputBtn.addEventListener('click', () => sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true)));
+      terminalStdinInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
           event.preventDefault();
           sendTerminalInput().catch((error) => setTerminalStatus(`stdin 发送失败：${error.message || error}`, true));
         }
       });
-      gitRefreshBtn?.addEventListener('click', () => loadGitPanel(gitPanelState.scope).catch((error) => setGitStatusLine(`Git 刷新失败：${error.message || error}`, true)));
-      gitOpenRepoBtn?.addEventListener('click', () => {
+      gitRefreshBtn.addEventListener('click', () => loadGitPanel(gitPanelState.scope).catch((error) => setGitStatusLine(`Git 刷新失败：${error.message || error}`, true)));
+      gitOpenRepoBtn.addEventListener('click', () => {
         const repo = gitPanelState.status?.repoRoot || gitPanelState.status?.root || currentWorkdir;
         if (repo) openLocalPath(repo);
       });
-      gitScopeUnstaged?.addEventListener('click', () => loadGitPanel('unstaged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
-      gitScopeStaged?.addEventListener('click', () => loadGitPanel('staged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
-      gitStageSelected?.addEventListener('click', () => runGitPathAction('/git/stage').catch((error) => setGitStatusLine(`暂存失败：${error.message || error}`, true)));
-      gitUnstageSelected?.addEventListener('click', () => runGitPathAction('/git/unstage').catch((error) => setGitStatusLine(`取消暂存失败：${error.message || error}`, true)));
-      gitDiscardSelected?.addEventListener('click', () => discardSelectedGitChanges().catch((error) => setGitStatusLine(`丢弃失败：${error.message || error}`, true)));
-      gitCommitBtn?.addEventListener('click', () => commitGitChanges().catch((error) => setGitStatusLine(`提交失败：${error.message || error}`, true)));
-      gitPullBtn?.addEventListener('click', () => pullGitChanges().catch((error) => setGitStatusLine(`拉取失败：${error.message || error}`, true)));
-      gitPushBtn?.addEventListener('click', () => pushGitChanges().catch((error) => setGitStatusLine(`推送失败：${error.message || error}`, true)));
-      gitBranchCreate?.addEventListener('click', () => createGitBranch().catch((error) => setGitStatusLine(`创建分支失败：${error.message || error}`, true)));
+      gitScopeUnstaged.addEventListener('click', () => loadGitPanel('unstaged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
+      gitScopeStaged.addEventListener('click', () => loadGitPanel('staged').catch((error) => setGitStatusLine(`Git 读取失败：${error.message || error}`, true)));
+      gitStageSelected.addEventListener('click', () => runGitPathAction('/git/stage').catch((error) => setGitStatusLine(`暂存失败：${error.message || error}`, true)));
+      gitUnstageSelected.addEventListener('click', () => runGitPathAction('/git/unstage').catch((error) => setGitStatusLine(`取消暂存失败：${error.message || error}`, true)));
+      gitDiscardSelected.addEventListener('click', () => discardSelectedGitChanges().catch((error) => setGitStatusLine(`丢弃失败：${error.message || error}`, true)));
+      gitCommitBtn.addEventListener('click', () => commitGitChanges().catch((error) => setGitStatusLine(`提交失败：${error.message || error}`, true)));
+      gitPullBtn.addEventListener('click', () => pullGitChanges().catch((error) => setGitStatusLine(`拉取失败：${error.message || error}`, true)));
+      gitPushBtn.addEventListener('click', () => pushGitChanges().catch((error) => setGitStatusLine(`推送失败：${error.message || error}`, true)));
+      gitBranchCreate.addEventListener('click', () => createGitBranch().catch((error) => setGitStatusLine(`创建分支失败：${error.message || error}`, true)));
       projectOpenConfirm.addEventListener('click', () => openProjectFolder(projectPathInput.value));
       projectPickFolder.addEventListener('click', pickProjectFolder);
       projectBrowseUp.addEventListener('click', () => {
@@ -5536,9 +5630,9 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
       $('recoverBtn').addEventListener('click', async () => {
         await requestWebUiServiceAction('recover');
       });
-      $('openSettingsBtn').addEventListener('click', async () => { await loadConfig(); openModal('settingsModal'); });
-      $('modelSelectBtn').addEventListener('click', async () => { await loadConfig(); openModal('settingsModal'); });
-      $('effortSelectBtn').addEventListener('click', async () => { await loadConfig(); openModal('settingsModal'); });
+      $('openSettingsBtn').addEventListener('click', async () => { await openSettingsPage('model'); });
+      $('modelSelectBtn').addEventListener('click', async () => { await openSettingsPage('model'); });
+      $('effortSelectBtn').addEventListener('click', async () => { await openSettingsPage('model'); });
       $('permissionBtn').addEventListener('click', (event) => { event.stopPropagation(); openPermissionMenu().catch((error) => addSystem(`权限菜单打开失败：${error.message || error}`, true)); });
       $('localModeBtn').addEventListener('click', () => addSystem('当前会话运行在本地 Codex CLI。'));
       $('openMemoryBtn').addEventListener('click', async () => { await loadMemory(); openModal('memoryModal'); });
@@ -5551,6 +5645,12 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         await saveConfig();
         await fetch('/restart', { method:'POST' });
         closeModal('settingsModal');
+      });
+      settingsNavItems.forEach((item) => {
+        item.addEventListener('click', () => setSettingsSection(item.dataset.settingsTarget || 'model'));
+      });
+      organizeSessionTitlesBtn?.addEventListener('click', () => {
+        organizeSessionTitles().catch((error) => setSettingsStatus(`整理失败：${error.message || error}`, true));
       });
       $('attachmentBtn').addEventListener('click', (event) => {
         event.stopPropagation();
@@ -5632,7 +5732,7 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         const trigger = event.target && event.target.closest ? event.target.closest('.local-path-link') : null;
         if (!trigger) return;
         event.preventDefault();
-        openMessageLocalPath(trigger.dataset.path || trigger.textContent || '');
+        openMessageLocalPath(trigger.dataset.path || trigger.textContent || '', trigger.dataset.kind || '');
       });
       send.addEventListener('click', () => {
         if (send.dataset.mode === 'stop') stopCurrentTurn();
