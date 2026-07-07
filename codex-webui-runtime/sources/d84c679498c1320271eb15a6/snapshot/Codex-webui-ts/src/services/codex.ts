@@ -1181,6 +1181,7 @@ export class CodexService extends EventEmitter {
     const latest = this.findRolloutByThreadId(threadId) || (this.isExistingResumePath(this.lastResumePath) ? this.lastResumePath : null);
     if (latest) {
       this.lastResumePath = latest;
+      this.bindThreadResumePath(threadId, latest);
       this.recordResume(latest);
     }
     if (turn.status === 'failed' && turn.error) {
@@ -1521,7 +1522,10 @@ export class CodexService extends EventEmitter {
   private handleExecEvent(event: any): void {
     if (event.type === 'thread.started') {
       const threadId = String(event.thread_id || event.threadId || '').trim();
-      if (threadId) this.activeThreadId = threadId;
+      if (threadId) {
+        this.activeThreadId = threadId;
+        if (this.isExistingResumePath(this.lastResumePath)) this.bindThreadResumePath(threadId, this.lastResumePath);
+      }
       this.emit('status_update');
       return;
     }
