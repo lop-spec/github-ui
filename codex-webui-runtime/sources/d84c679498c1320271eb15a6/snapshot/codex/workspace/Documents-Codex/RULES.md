@@ -172,6 +172,7 @@
 - 本节详细执行细则优先维护在 `C:\Users\lop\.codex\rules\artifact-apk-windows.md`；命中 Windows shell、路径、产物、APK/安装包任务时必须按需读取，不得把全文复制回全局常驻提示。
 - Windows 本地操作默认 shellless：命令执行、文件、打开、注册表、服务、进程、端口、文本、JSON、压缩等一律先触发 `$lop-winops`，优先走 `winops-mcp`/MCP tool；MCP 未加载时才退回 `C:\Users\lop\.codex\tools\winops\winops.exe <job.json>` 与 UTF-8 job/result 文件。
 - `cmd/pwsh/nu/nush` 只作 bootstrap 或明确例外：当前 Codex 执行工具需要宿主进程启动 winops、winops 尚未覆盖的系统对象/API、或用户点名复现 shell；例外必须说明原因，复杂业务内容不得进入 shell。
+- winops/MCP/bootstrap/helper/诊断子进程必须隐藏窗口/静默运行，输出只进 result/log/结构化返回；短生命周期进程、端口探针和验证脚本也不得前台可见。
 - 2026-07-04 的 `cmd`/`nu` 横评只作为 legacy fallback 参考，不再作为默认路线；若 fallback 出现引号、反引号、空格、中文、管道、括号、重定向、内联代码、JSON/HTML/Markdown/正则或长参数，立即迁回 winops job/result。
 - 固定字符串和正则搜索默认走 `$lop-winops` 的 text/json/fs 能力或通过 winops `exec` argv 调外部工具；只有 legacy fallback 才使用 `rg` 命令行。搜索词带空格、`|`、中文、引号、反引号、标点或外层执行器会拆引号时，必须改 pattern 文件或 winops 输入文件，禁止切到 `pwsh` 逃避。
 - `node -e`/`python -c` 在 `cmd` 里只允许无内层引号、无模板字符串、无 JSON/HTML/正则、无路径、无中文、无多语句、输出不要求引号保真的短表达式；一旦输入或输出涉及引号、JSON、Markdown、代码片段、路径或原样文本，或出现拆引号、`SyntaxError`、`os error 123`、参数被拆，必须立即改临时 `.mjs`/`.py`、argv 或输入文件，禁止继续堆转义硬拼一行。

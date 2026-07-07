@@ -6,6 +6,7 @@
 
 - Windows 本地操作默认 shellless：命令执行、文件、打开、注册表、服务、进程、端口、文本、JSON、zip/unzip 一律先触发 `$lop-winops`，首选 `winops-mcp`/MCP tool；MCP 未加载时才退回 `C:\Users\lop\.codex\tools\winops\winops.exe <job.json>`；复杂内容只写 UTF-8 job 文件，主结果写 result.json，stdout 只作为结果路径提示。
 - `cmd/pwsh/nu/nush` 只允许三类例外：当前 Codex 执行工具需要宿主进程来启动 `winops.exe` 的 bootstrap；winops 尚未覆盖的系统对象/API；用户明确要求 shell 复现。例外必须说明原因，且复杂业务内容仍不得进入 shell 命令行。
+- 所有 winops/MCP/bootstrap/helper/诊断子进程都必须隐藏窗口/静默运行，输出只进 result.json、MCP tool 返回或日志；不得为了临时查进程、端口、命令行或验证而弹出可见 `cmd/pwsh/nu/nush` 窗口。
 - 2026-07-04 的 `cmd`/`nu` 横评只保留为 legacy fallback 参考，不再作为默认路线：`cmd` 可处理极短只读外部命令，`nu` 可处理简单结构化过滤；一旦涉及引号、反引号、空格、中文、JSON/HTML/Markdown/正则、长参数或原样输出，立即回到 winops job。
 - `winops.exe` 适用：外部进程 argv 保真、文件读写/复制/移动/删除/hash、打开文件/目录/URL、注册表、服务、进程、端口、文本搜索替换、JSON 读写选择、zip/unzip；参数含空格/中文/引号/反引号/`&|()<>%!`、JSON/HTML/Markdown/正则、长参数、需要原样输出、或之前在 `cmd/nu` 中出现拆参/乱码/转义失败时，不再二次堆 shell 转义。
 - `run-argv.mjs` 仅作为旧兼容；新任务默认用 `winops.exe`。`.cmd/.bat` 默认拒绝，必须定位真实 `.exe/.js` 入口；确实必须跑 `.cmd/.bat` 时才回到显式 shell 例外并记录原因。

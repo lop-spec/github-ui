@@ -36,6 +36,7 @@ Prefer winops for:
 - Use winops first even for simple reads, searches, copies, port checks, process checks, and external executable argv when the operation is part of a Windows local task.
 - Do not pre-run `where.exe` for normal tools such as `rg`, `node`, or `git`; pass the bare tool name to `exec.run` or inspect it with `exec.resolve`. Winops resolves through its tool cache, process/user/machine PATH, and common tool directories.
 - Allow `cmd`, `pwsh`, `nu`, or `nush` only for bootstrap, uncovered OS objects/APIs, or explicit shell reproduction requested by the user.
+- Keep every bootstrap/helper/diagnostic child hidden and silent. Process probes, port checks, one-off validations, MCP helpers, and wrapper processes must return through result JSON, MCP content, or logs, never by opening a visible shell window.
 - Do not add more shell escaping after a quote/encoding failure; move the payload into the job file.
 - Treat `run-argv.mjs` as legacy compatibility. New Windows reliability work must use `winops.exe`.
 - Reject `.cmd` and `.bat` wrappers by default. Prefer the real `.exe`, `.js`, or tool entrypoint unless an explicit shell wrapper is truly required.

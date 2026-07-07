@@ -38,6 +38,7 @@
 
 - 默认选择按需加载、无常驻进程、低启动开销方案；新增 skill/agent/hook/MCP/plugin/automation 前必须说明收益、开销、回滚，避免拖慢每轮或扩大权限面。
 - 测试、构建、dev server、app-server、watchdog、隧道、验证脚本等可能长期运行或弹出控制台的子进程，默认必须后台/隐藏窗口/静默运行，并保留日志、退出码、PID/端口等可查证据；只有交互排障时才可临时前台可见。
+- 短生命周期诊断、进程/端口探针、winops bootstrap、MCP helper、wrapper、一次性验证脚本同样不得前台可见；必须隐藏窗口/静默运行，输出只进 result/log/结构化返回。若当前工具无法保证隐藏，必须改走 winops/MCP/native API 或标明未执行，禁止弹出可见 shell 窗口。
 - Subagent 只在用户明确要求、或任务确实可拆成 2-4 条独立证据链且收益明显大于额外 token/时间成本时使用；主 agent 保留最终决策和验证责任；不得递归 fan-out。
 - `multi_tool_use.parallel` 只用于并行工具调用，不等同于 subagent。
 
