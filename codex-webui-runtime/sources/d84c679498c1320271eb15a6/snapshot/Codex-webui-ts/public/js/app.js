@@ -3506,6 +3506,48 @@ const CLIENT_BUILD = '20260707-local-dir-open-v4';
         row.textContent = message;
         row.classList.toggle('settings-status-error', Boolean(error));
       }
+      function setSettingsSection(section = 'model') {
+        const target = settingsSections.some((item) => item.dataset.settingsSection === section) ? section : 'model';
+        settingsNavItems.forEach((item) => {
+          const active = item.dataset.settingsTarget === target;
+          item.classList.toggle('settings-nav-item-active', active);
+          item.setAttribute('aria-current', active ? 'page' : 'false');
+        });
+        settingsSections.forEach((item) => {
+          item.hidden = item.dataset.settingsSection !== target;
+        });
+        exposeDebugState();
+      }
+      async function openSettingsPage(section = 'model') {
+        await loadConfig();
+        setSettingsSection(section);
+        openModal('settingsModal');
+      }
+      async function organizeSessionTitles() {
+        if (!organizeSessionTitlesBtn) return;
+        const originalText = organizeSessionTitlesBtn.textContent || '整理标题';
+        organizeSessionTitlesBtn.disabled = true;
+        organizeSessionTitlesBtn.textContent = '整理中...';
+        setSettingsStatus('正在重新扫描历史会话标题...');
+        try {
+          const response = await fetch('/sessions/retitle', { method:'POST', cache: 'no-store' });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || data.ok === false || !Array.isArray(data.sessions)) throw new Error(data.error || `HTTP ${response.status}`);
+          sessionsCache = (data.sessions || []).filter((session) => !optimisticDeletedSessionPaths.has(normalizeSessionPath(session.path)));
+          currentWorkdir = data.workdir || currentWorkdir;
+          currentProjectRootPath = data.currentRoot || currentProjectRootPath || currentWorkdir;
+          updateComposerContext();
+          renderSessions();
+          renderProjects();
+          await loadProjects();
+          setSettingsStatus(`已整理 ${data.titled || sessionsCache.length} / ${data.total || sessionsCache.length} 个会话标题`);
+        } catch (error) {
+          setSettingsStatus(`整理失败：${error.message || error}`, true);
+        } finally {
+          organizeSessionTitlesBtn.disabled = false;
+          organizeSessionTitlesBtn.textContent = originalText;
+        }
+      }
       async function saveConfig() {
         const payload = {
           model: $('cfgModel').value || 'gpt-5.5',
