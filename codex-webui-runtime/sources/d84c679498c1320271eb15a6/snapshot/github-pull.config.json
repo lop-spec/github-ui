@@ -7,7 +7,6 @@
   "maxApplyPerRun": 200,
   "protectedPaths": [
     "Codex-webui-ts/history.json",
-    "Codex-webui-react/history.json",
     "codex/rules/default.rules",
     "codex/skills/.system/**",
     ".codex/**",
