@@ -7,7 +7,6 @@
   "debounceMs": 1500,
   "maxFileBytes": 2097152,
   "maxChangesPerCommit": 800,
-  "reactSyncEnabled": false,
   "include": [
     ".gitignore",
     "AGENTS.md",
@@ -34,19 +33,7 @@
     "Codex-webui-ts/scripts/**",
     "Codex-webui-ts/tsconfig*.json",
     "Codex-webui-ts/src/**",
-    "Codex-webui-ts/public/**",
-    "Codex-webui-react/AGENTS.md",
-    "Codex-webui-react/components.json",
-    "Codex-webui-react/RULES.md",
-    "Codex-webui-react/package.json",
-    "Codex-webui-react/scripts/**",
-    "Codex-webui-react/tsconfig*.json",
-    "Codex-webui-react/vite.config.*",
-    "Codex-webui-react/index.html",
-    "Codex-webui-react/server/**",
-    "Codex-webui-react/src/**",
-    "Codex-webui-react/static/**",
-    "Codex-webui-react/docs/source-to-target-ledger.md"
+    "Codex-webui-ts/public/**"
   ],
   "externalRoots": [
     {
@@ -165,17 +152,7 @@
     "Codex-webui-ts/package.json",
     "Codex-webui-ts/tsconfig.json",
     "Codex-webui-ts/src",
-    "Codex-webui-ts/public",
-    "Codex-webui-react/AGENTS.md",
-    "Codex-webui-react/RULES.md",
-    "Codex-webui-react/package.json",
-    "Codex-webui-react/tsconfig.server.json",
-    "Codex-webui-react/vite.config.ts",
-    "Codex-webui-react/index.html",
-    "Codex-webui-react/server",
-    "Codex-webui-react/src",
-    "Codex-webui-react/static",
-    "Codex-webui-react/docs/source-to-target-ledger.md"
+    "Codex-webui-ts/public"
   ],
   "pull": {
     "owner": "lop-spec",
