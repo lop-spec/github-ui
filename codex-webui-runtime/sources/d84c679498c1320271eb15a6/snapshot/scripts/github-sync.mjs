@@ -1122,6 +1122,7 @@ function printStatus(report) {
   console.log(`[github-sync] source: ${report.source.sourceName} (${report.source.sourceId})`);
   console.log(`[github-sync] source root: ${report.sourceRoot}`);
   console.log(`[github-sync] snapshot root: ${report.snapshotRoot}`);
+  console.log(`[github-sync] React sync: ${report.reactSyncEnabled ? 'on' : 'off'}`);
   console.log(`[github-sync] create missing repo: ${report.createRepo ? 'yes' : 'no'} (${report.private ? 'private' : 'public'})`);
   console.log(`[github-sync] local source files: ${report.fileCount} (${formatBytes(report.totalBytes)})`);
   console.log(`[github-sync] external rule roots: ${report.externalRootCount}`);
@@ -1209,7 +1210,10 @@ async function runWatch({ rootDir, config, noInitial, dryRun, message }) {
 
   const shouldSync = createSyncFilter(config);
   const watchers = [];
-  for (const relTarget of config.watchTargets) {
+  const watchTargets = (config.watchTargets || []).filter((relTarget) =>
+    config.reactSyncEnabled || !isReactSyncPath(relTarget)
+  );
+  for (const relTarget of watchTargets) {
     const absTarget = resolveConfigPath(rootDir, relTarget);
     if (!fs.existsSync(absTarget)) continue;
     const stat = fs.statSync(absTarget);
@@ -1239,6 +1243,7 @@ async function main() {
     return;
   }
   const config = loadConfig(root);
+  if (args.withReact) config.reactSyncEnabled = true;
   if (args.tokenStdin) {
     config.token = await readStdinToken();
   }

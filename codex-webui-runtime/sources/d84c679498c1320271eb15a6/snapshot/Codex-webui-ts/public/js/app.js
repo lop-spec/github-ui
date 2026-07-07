@@ -5410,6 +5410,8 @@ const CLIENT_BUILD = '20260707-question-jump-v1';
       historyForwardBtn.addEventListener('click', () => {
         navigateConversationHistory('forward').catch((error) => addSystem(`前进到下一个对话失败：${error.message || error}`, true));
       });
+      questionJumpUp?.addEventListener('click', () => jumpQuestionNavigation('up'));
+      questionJumpDown?.addEventListener('click', () => jumpQuestionNavigation('down'));
       $('themeToggle').addEventListener('click', () => setTheme(document.body.classList.contains('dark') ? 'light' : 'dark'));
       mobileSidebarBtn.addEventListener('click', openMobileSidebar);
       sidebarBackdrop.addEventListener('click', closeMobileSidebar);
@@ -5612,6 +5614,7 @@ const CLIENT_BUILD = '20260707-question-jump-v1';
       $('timeline').addEventListener('scroll', () => {
         const timeline = $('timeline');
         if (timeline.scrollTop <= 80) loadOlderTranscriptPage().catch((error) => addSystem(`加载更早历史失败：${error.message || error}`, true));
+        scheduleQuestionJumpUpdate();
       });
       log.addEventListener('click', (event) => {
         const trigger = event.target && event.target.closest ? event.target.closest('.local-path-link') : null;
@@ -5678,6 +5681,7 @@ const CLIENT_BUILD = '20260707-question-jump-v1';
         ensureSidebarVisible();
         updatePlanModeControls();
         updateConversationNavControls();
+        updateQuestionJumpControls();
         exposeDebugState();
         await checkAssetVersion();
         if (DEBUG_NO_EVENTS) {
