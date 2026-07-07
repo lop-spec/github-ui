@@ -4577,6 +4577,7 @@ const CLIENT_BUILD = '20260707-question-jump-v1';
       function scheduleAssistantReplyCopyRefresh() {
         window.clearTimeout(assistantReplyCopyRefreshTimer);
         assistantReplyCopyRefreshTimer = window.setTimeout(() => installAssistantReplyCopyButtons(), 80);
+        scheduleQuestionJumpUpdate();
       }
       if (typeof MutationObserver === 'function') {
         const assistantReplyCopyObserver = new MutationObserver(scheduleAssistantReplyCopyRefresh);
