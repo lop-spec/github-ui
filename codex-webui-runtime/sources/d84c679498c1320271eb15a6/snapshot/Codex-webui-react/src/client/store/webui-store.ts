@@ -43,16 +43,35 @@ function explicitEventSessionPath(data: any = {}): string {
   return String(data?.resume_path || data?.sessionPath || data?.path || '');
 }
 
+function hasEventScopeIdentity(data: any = {}): boolean {
+  return Boolean(data?.threadId || data?.turnId || data?.itemId);
+}
+
 function sessionPathForStateEvent(
   data: any,
   state: Pick<WebuiState, 'runtimeResumePath' | 'currentResumePath'>
 ): string {
-  return explicitEventSessionPath(data) || state.runtimeResumePath || '';
+  const explicitPath = explicitEventSessionPath(data);
+  if (explicitPath) return explicitPath;
+  if (hasEventScopeIdentity(data)) return '';
+  return state.runtimeResumePath || '';
 }
 
 function shouldRenderSessionEvent(data: any, state: Pick<WebuiState, 'runtimeResumePath' | 'currentResumePath'>): boolean {
   const path = sessionPathForStateEvent(data, state);
-  return !path || !state.currentResumePath || sameSessionPath(path, state.currentResumePath);
+  if (!path) return !hasEventScopeIdentity(data);
+  return !state.currentResumePath || sameSessionPath(path, state.currentResumePath);
+}
+
+function streamEventKey(data: any, state: Pick<WebuiState, 'runtimeResumePath' | 'currentResumePath'>): string {
+  const sessionPath = sessionPathForStateEvent(data, state);
+  if (!sessionPath) return '';
+  return [
+    normalizeSessionPath(sessionPath),
+    String(data?.threadId || ''),
+    String(data?.turnId || ''),
+    String(data?.itemId || '')
+  ].join('|');
 }
 
 interface WebuiState {
@@ -69,6 +88,7 @@ interface WebuiState {
   search: string;
   messages: ChatMessage[];
   streamMessageId: string | null;
+  streamMessageKey: string | null;
   queue: QueueItem[];
   pendingUserInput: PendingUserInput | null;
   input: string;
@@ -132,6 +152,7 @@ export const useWebuiStore = create<WebuiState>((set, get) => ({
   search: '',
   messages: [],
   streamMessageId: null,
+  streamMessageKey: null,
   queue: [],
   pendingUserInput: null,
   input: '',
