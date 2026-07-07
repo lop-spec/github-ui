@@ -5326,7 +5326,7 @@ const CLIENT_BUILD = '20260707-local-dir-open-v5';
         es.addEventListener('timeline_item', (event) => {
           const data = JSON.parse(event.data);
           if (!shouldRenderSessionEvent(data)) return;
-          addTimelineItem(data, { sessionPath: sessionPathForStreamingEvent(data) || currentResumePath });
+          addTimelineItem(data, { sessionPath: sessionPathForStreamingEvent(data) || activeRuntimeResumePath || '' });
           const serialized = JSON.stringify(data);
           if (/approval|elicitation|userInput|question/i.test(serialized)) {
             deliverAppNotification({ title: 'Input needed', body: data.text || data.detail || data.title || 'Your input is needed.', kind: 'warning', minVisible: false });
