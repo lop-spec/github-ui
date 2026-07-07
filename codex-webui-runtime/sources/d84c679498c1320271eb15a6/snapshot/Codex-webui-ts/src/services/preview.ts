@@ -75,8 +75,38 @@ async function previewWebsite(url: string) {
 function previewFile(filePath: string) {
   const stat = fs.statSync(filePath);
   if (stat.isDirectory()) {
-    const entries = fs.readdirSync(filePath, { withFileTypes: true })
-      .map((entry) => ({
+    const entries = [];
+    const directory = fs.opendirSync(filePath);
+    try {
+      while (entries.length < MAX_DIRECTORY_PREVIEW_ENTRIES + 1) {
+        const entry = directory.readSync();
+        if (!entry) break;
+        entries.push({
+          name: entry.name,
+          path: path.join(filePath, entry.name),
+          kind: entry.isDirectory() ? 'directory' : 'file',
+          hidden: entry.name.startsWith('.')
+        });
+      }
+    } finally {
+      directory.closeSync();
+    }
+    entries.sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
+      return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+    });
+    const visibleEntries = entries.slice(0, MAX_DIRECTORY_PREVIEW_ENTRIES);
+    const truncated = entries.length > MAX_DIRECTORY_PREVIEW_ENTRIES;
+    return {
+      ok: true,
+      kind: 'directory',
+      path: filePath,
+      name: basenameFor(filePath),
+      entries: visibleEntries,
+      totalEntries: visibleEntries.length + (truncated ? 1 : 0),
+      truncated
+    };
+  }
         name: entry.name,
         path: path.join(filePath, entry.name),
         kind: entry.isDirectory() ? 'directory' : 'file',
