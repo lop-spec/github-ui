@@ -382,13 +382,13 @@ export class CodexService extends EventEmitter {
     writeInterruptedTurnState(null);
   }
 
-  private clearUserStoppedRuntimeState(): void {
+  private clearUserStoppedRuntimeState(reason: string): void {
     this.activeTurnId = null;
     this.activeThreadRunning = false;
     this.activeStartedAtMs = 0;
     this.pendingUserInputs.clear();
     this.clearGuidanceInputs(false);
-    this.clearInterruptedTurnState('user-cancel');
+    this.clearInterruptedTurnState(reason);
   }
 
   private markInterruptedTurnUserStopped(reason: string): void {
@@ -431,7 +431,7 @@ export class CodexService extends EventEmitter {
     })()
       .catch((error) => this.broadcastStderr(`停止失败：${error.message || error}`))
       .finally(() => {
-        this.clearUserStoppedRuntimeState();
+        this.clearUserStoppedRuntimeState('user-cancel');
         this.emit('status_update');
         if (cb) cb();
       });
