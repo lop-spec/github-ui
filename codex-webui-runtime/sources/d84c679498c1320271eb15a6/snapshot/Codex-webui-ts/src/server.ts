@@ -2176,6 +2176,38 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ sessions: list, current: lastPath, workdir: codexService.getWorkdir(), currentRoot }));
   }
 
+  if (req.method === 'POST' && url === '/sessions/retitle') {
+    if (!requireAuth(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
+    const h = readHistory();
+    const archived = archivedSessionPathSet(h);
+    const pinned = pinnedSessionPathSet(h);
+    const roots = validHistoryRoots(h);
+    const currentRoot = projectRootForWorkdir(codexService.getWorkdir(), roots);
+    clearSessionSummaryCache();
+    const list = scanSessions()
+      .filter((session) => !archived.has(pathIdentity(session.path)))
+      .map((session) => {
+        const effectiveCwd = effectiveSessionWorkdir(h, session);
+        const moved = effectiveCwd && session.cwd && pathIdentity(effectiveCwd) !== pathIdentity(session.cwd);
+        return {
+          ...session,
+          cwd: effectiveCwd || session.cwd,
+          originalCwd: moved ? session.cwd : undefined,
+          projectRoot: projectRootForWorkdir(effectiveCwd || session.cwd, roots),
+          pinned: pinned.has(pathIdentity(session.path))
+        };
+      });
+    return sendJson(res, 200, {
+      ok: true,
+      total: list.length,
+      titled: list.filter((session) => Boolean(session.title)).length,
+      sessions: list,
+      current: codexService.getDisplayResumePath(),
+      workdir: codexService.getWorkdir(),
+      currentRoot
+    });
+  }
+
   if (req.method === 'GET' && url === '/session-messages') {
     const requestedPath = parsedUrl.searchParams.get('path');
     let sessionPath = requestedPath || codexService.getDisplayResumePath();
