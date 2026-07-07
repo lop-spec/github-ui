@@ -31,12 +31,37 @@ function messageRole(item: any): ChatMessage['role'] {
   return 'agent';
 }
 
+function normalizeSessionPath(value: unknown): string {
+  return String(value || '').replace(/^\\\\\?\\/, '').replace(/\\/g, '/').toLowerCase();
+}
+
+function sameSessionPath(a: unknown, b: unknown): boolean {
+  return Boolean(a && b && normalizeSessionPath(a) === normalizeSessionPath(b));
+}
+
+function explicitEventSessionPath(data: any = {}): string {
+  return String(data?.resume_path || data?.sessionPath || data?.path || '');
+}
+
+function sessionPathForStateEvent(
+  data: any,
+  state: Pick<WebuiState, 'runtimeResumePath' | 'currentResumePath'>
+): string {
+  return explicitEventSessionPath(data) || state.runtimeResumePath || '';
+}
+
+function shouldRenderSessionEvent(data: any, state: Pick<WebuiState, 'runtimeResumePath' | 'currentResumePath'>): boolean {
+  const path = sessionPathForStateEvent(data, state);
+  return !path || !state.currentResumePath || sameSessionPath(path, state.currentResumePath);
+}
+
 interface WebuiState {
   booted: boolean;
   connection: 'connecting' | 'connected' | 'error';
   running: boolean;
   workdir: string;
   currentResumePath: string | null;
+  runtimeResumePath: string | null;
   config: Record<string, any>;
   sessions: SessionEntry[];
   projects: ProjectsResponse['groups'];
@@ -69,7 +94,7 @@ interface WebuiState {
   setModal: (modal: ModalKey) => void;
   init: () => Promise<void>;
   connectEvents: () => void;
-  loadSessions: () => Promise<void>;
+  loadSessions: (options?: { followServerCurrent?: boolean }) => Promise<void>;
   loadProjects: () => Promise<void>;
   loadTranscript: (path?: string | null) => Promise<void>;
   resumeSession: (session: SessionEntry) => Promise<void>;
@@ -99,6 +124,7 @@ export const useWebuiStore = create<WebuiState>((set, get) => ({
   running: false,
   workdir: '',
   currentResumePath: null,
+  runtimeResumePath: null,
   config: {},
   sessions: [],
   projects: {},
@@ -142,7 +168,9 @@ export const useWebuiStore = create<WebuiState>((set, get) => ({
     if (get().booted) return;
     set({ booted: true, connection: 'connecting' });
     get().connectEvents();
-    await Promise.allSettled([get().loadConfig(), get().loadSessions(), get().loadProjects(), get().loadTranscript()]);
+    await Promise.allSettled([get().loadConfig(), get().loadProjects()]);
+    await get().loadSessions({ followServerCurrent: true });
+    await get().loadTranscript(get().currentResumePath);
   },
   connectEvents: () => {
     if (eventSource) return;

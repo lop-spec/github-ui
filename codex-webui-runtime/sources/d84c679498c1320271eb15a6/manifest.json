@@ -13,7 +13,7 @@
     "workspacePath": "C:\\Users\\lop\\Documents\\Codex\\github-ui",
     "scope": "source-rules-skills"
   },
-  "generatedAt": "2026-07-07T06:10:22.578Z",
+  "generatedAt": "2026-07-07T06:10:33.707Z",
   "fullSnapshot": true,
   "mergePolicy": {
     "webui-source": "remote-newer-wins-then-verify",
@@ -44,8 +44,8 @@
     },
     {
       "path": "Codex-webui-react/docs/source-to-target-ledger.md",
-      "sha": "c0f2d8728657d389f30f1e4c80d9030ca7ca0f61",
-      "size": 9714,
+      "sha": "24095e340127de31d646e3b627613634bbee124d",
+      "size": 10115,
       "category": "webui-source"
     },
     {
@@ -254,8 +254,8 @@
     },
     {
       "path": "Codex-webui-react/src/client/store/webui-store.ts",
-      "sha": "117041ad7616530dd297ec92f061ba01c809586f",
-      "size": 13047,
+      "sha": "cbca00fce1303b2498105384ad208350090be7a1",
+      "size": 14138,
       "category": "webui-source"
     },
     {
@@ -776,8 +776,8 @@
     },
     {
       "path": "RULES.md",
-      "sha": "6aff17d8811b0effb38da58e79139784432807f0",
-      "size": 5917,
+      "sha": "900b7096d7f75c9fc0e131e904f6b9570df91716",
+      "size": 6049,
       "category": "rules"
     },
     {
