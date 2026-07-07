@@ -179,42 +179,72 @@ export const useWebuiStore = create<WebuiState>((set, get) => ({
     eventSource.addEventListener('error', () => set({ connection: 'error', error: 'SSE 连接异常，浏览器会自动重试。' }));
     eventSource.addEventListener('status', (event) => {
       const data = JSON.parse((event as MessageEvent).data) as StatusEvent;
-      set({
-        running: Boolean(data.running),
-        workdir: data.workdir || get().workdir,
-        currentResumePath: data.resume_path || null,
-        queue: data.queue || [],
-        pendingUserInput: data.pendingUserInput || null,
-        config: data.config || get().config
+      const runtimeResumePath = data.resume_path || null;
+      set((state) => {
+        const wasFollowingRuntime = !state.currentResumePath
+          || !state.runtimeResumePath
+          || sameSessionPath(state.currentResumePath, state.runtimeResumePath);
+        const shouldFollowRuntime = wasFollowingRuntime
+          || !state.currentResumePath
+          || sameSessionPath(state.currentResumePath, runtimeResumePath);
+        return {
+          running: Boolean(data.running),
+          runtimeResumePath,
+          workdir: data.workdir || state.workdir,
+          currentResumePath: shouldFollowRuntime ? runtimeResumePath : state.currentResumePath,
+          queue: data.queue || [],
+          pendingUserInput: data.pendingUserInput || null,
+          config: data.config || state.config
+        };
       });
       get().loadSessions().catch(() => undefined);
       get().loadProjects().catch(() => undefined);
     });
-    eventSource.addEventListener('system', (event) => set((state) => ({ messages: [...state.messages, msg('system', JSON.parse((event as MessageEvent).data).text || '')] })));
-    eventSource.addEventListener('stderr', (event) => set((state) => ({ messages: [...state.messages, msg('error', JSON.parse((event as MessageEvent).data).text || '')] })));
+    eventSource.addEventListener('system', (event) => {
+      const data = JSON.parse((event as MessageEvent).data);
+      set((state) => shouldRenderSessionEvent(data, state)
+        ? { messages: [...state.messages, msg('system', data.text || '', data)] }
+        : {});
+    });
+    eventSource.addEventListener('stderr', (event) => {
+      const data = JSON.parse((event as MessageEvent).data);
+      set((state) => shouldRenderSessionEvent(data, state)
+        ? { messages: [...state.messages, msg('error', data.text || '', data)] }
+        : {});
+    });
     eventSource.addEventListener('tool', (event) => {
       const data = JSON.parse((event as MessageEvent).data);
-      set((state) => ({ messages: [...state.messages, msg('tool', `${data.name || '工具'}\n${data.detail || ''}`, data)] }));
+      set((state) => shouldRenderSessionEvent(data, state)
+        ? { messages: [...state.messages, msg('tool', `${data.name || '工具'}\n${data.detail || ''}`, data)] }
+        : {});
     });
     eventSource.addEventListener('timeline_item', (event) => {
       const data = JSON.parse((event as MessageEvent).data);
-      set((state) => ({ messages: [...state.messages, msg('timeline', data.text || data.detail || data.title || textOf(data), data)] }));
+      set((state) => shouldRenderSessionEvent(data, state)
+        ? { messages: [...state.messages, msg('timeline', data.text || data.detail || data.title || textOf(data), data)] }
+        : {});
     });
     eventSource.addEventListener('server_request', (event) => {
       const data = JSON.parse((event as MessageEvent).data);
-      set({ pendingUserInput: data });
+      set((state) => shouldRenderSessionEvent(data, state) ? { pendingUserInput: data } : {});
     });
-    eventSource.addEventListener('server_request_resolved', () => set({ pendingUserInput: null }));
+    eventSource.addEventListener('server_request_resolved', (event) => {
+      const data = JSON.parse((event as MessageEvent).data);
+      set((state) => shouldRenderSessionEvent(data, state) ? { pendingUserInput: null } : {});
+    });
     eventSource.addEventListener('user_message', (event) => {
       const data = JSON.parse((event as MessageEvent).data);
-      set((state) => ({ messages: [...state.messages, { ...msg('user', data.text || '', data), turnId: data.turnId || '' }] }));
+      set((state) => shouldRenderSessionEvent(data, state)
+        ? { messages: [...state.messages, { ...msg('user', data.text || '', data), turnId: data.turnId || '' }] }
+        : {});
     });
     eventSource.addEventListener('delta', (event) => {
       const data = JSON.parse((event as MessageEvent).data);
       set((state) => {
+        if (!shouldRenderSessionEvent(data, state)) return {};
         const text = data.text || '';
         if (!state.streamMessageId) {
-          const item = { ...msg('agent', text), status: 'streaming' };
+          const item = { ...msg('agent', text, data), status: 'streaming' };
           return { messages: [...state.messages, item], streamMessageId: item.id };
         }
         return {
@@ -225,13 +255,14 @@ export const useWebuiStore = create<WebuiState>((set, get) => ({
     eventSource.addEventListener('message', (event) => {
       const data = JSON.parse((event as MessageEvent).data);
       set((state) => {
+        if (!shouldRenderSessionEvent(data, state)) return {};
         if (state.streamMessageId) {
           return {
             messages: state.messages.map((item) => (item.id === state.streamMessageId ? { ...item, status: 'done', text: item.text || data.text || '' } : item)),
             streamMessageId: null
           };
         }
-        return { messages: [...state.messages, msg('agent', data.text || '')] };
+        return { messages: [...state.messages, msg('agent', data.text || '', data)] };
       });
     });
   },
