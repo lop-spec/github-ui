@@ -13,7 +13,7 @@
     "workspacePath": "C:\\Users\\lop\\Documents\\Codex\\github-ui",
     "scope": "source-rules-skills"
   },
-  "generatedAt": "2026-07-07T07:07:39.542Z",
+  "generatedAt": "2026-07-07T07:08:30.423Z",
   "fullSnapshot": true,
   "mergePolicy": {
     "webui-source": "remote-newer-wins-then-verify",
@@ -392,8 +392,8 @@
     },
     {
       "path": "Codex-webui-ts/RULES.md",
-      "sha": "219e48058094a4502a3141b6f926fd938a931ed5",
-      "size": 7703,
+      "sha": "7bed2d162308c786a87c3bafb1362cd499b584f4",
+      "size": 8033,
       "category": "webui-source"
     },
     {
@@ -602,8 +602,8 @@
     },
     {
       "path": "codex/rules/webui-plus-parity.md",
-      "sha": "5aa6606e19f2aa9438ece9e82cb367558921fe49",
-      "size": 8218,
+      "sha": "00daab8fd1e26d6a31d8afaa869cb826965c5f64",
+      "size": 8396,
       "category": "rules"
     },
     {

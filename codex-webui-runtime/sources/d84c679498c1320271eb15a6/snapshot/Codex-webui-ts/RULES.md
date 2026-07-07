@@ -39,6 +39,7 @@
 - 本项目是 Windows 本地优先的 Codex WebUI，服务端为 Node.js 18+、TypeScript、内置 HTTP/SSE，前端为 `public/` 下的原生 HTML/CSS/JS。
 - 运行命令以 `package.json` 为准：构建用 `npm run build`，静态语法检查用 `npm run check`，测试用 `npm test`，本地服务用 `npm run serve`，公网/隧道相关用 `npm run public` 或现有启动脚本。
 - 迭代时先运行最窄相关检查；交付前按影响范围运行更宽的 `npm run build`、`npm run check`、`npm test` 和必要的运行态接口/UI 验证。
+- 本地目录、文件路径、Markdown 超链接或“目录链接”打不开时，必须验证 `.local-path-link` 渲染、点击链路、`/preview` 失败 fallback 到 `/path/open`、外部绝对目录 `POST /path/open` 和运行态 `/asset-version`；禁止只验预览层或显示“预览本地路径失败”后停止。
 
 ### 目录与模块边界
 
